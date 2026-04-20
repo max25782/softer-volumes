@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── Auth (NextAuth) ───────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ── Users ─────────────────────────────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  emailVerified    DateTime?
+  name             String?
+  image            String?
+  instagramHandle  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  accounts  Account[]
+  sessions  Session[]
+  purchases Purchase[]
+
+  @@index([email])
+}
+
+// ── Guides ────────────────────────────────────────────────
+
+model Guide {
+  id           String  @id @default(cuid())
+  slug         String  @unique   // 'seoul', 'tokyo', etc.
+  title        String
+  subtitle     String
+  tagline      String            // Native script: '서울'
+  description  String  @db.Text
+  coverImage   String
+  heroImage    String
+  price        Int               // cents, e.g. 10000 = $100
+  currency     String  @default("usd")
+  isPublished  Boolean @default(false)
+  mapStyleUrl  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  places    Place[]
+  purchases Purchase[]
+
+  @@index([slug])
+  @@index([isPublished])
+}
+
+// ── Places ────────────────────────────────────────────────
+
+enum PlaceCategory {
+  cafe
+  restaurant
+  bar
+  hotel
+  shop
+  culture
+  wellness
+}
+
+model Place {
+  id           String        @id @default(cuid())
+  guideId      String
+  name         String
+  description  String        @db.Text
+  personalNote String?       @db.Text   // Her personal note ← core value
+  category     PlaceCategory
+  district     String
+  address      String
+  lat          Float
+  lng          Float
+  priceRange   Int?          // 1-4
+  instagramUrl String?
+  websiteUrl   String?
+  googleMapsUrl String?
+  isFeatured   Boolean       @default(false)
+  isPublished  Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guide  Guide        @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  photos PlacePhoto[]
+
+  @@index([guideId])
+  @@index([category])
+  @@index([district])
+}
+
+model PlacePhoto {
+  id       String @id @default(cuid())
+  placeId  String
+  url      String           // CloudFront URL
+  s3Key    String           // S3 object key
+  blurhash String?          // For progressive loading
+  alt      String
+  width    Int
+  height   Int
+  sortOrder Int @default(0)
+
+  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@index([placeId])
+}
+
+// ── Purchases ─────────────────────────────────────────────
+
+model Purchase {
+  id               String   @id @default(cuid())
+  userId           String
+  guideId          String
+  stripePaymentId  String?  @unique
+  paypalOrderId    String?  @unique
+  amount           Int      // cents
+  currency         String
+  createdAt        DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guide Guide @relation(fields: [guideId], references: [id])
+
+  @@unique([userId, guideId])  // One purchase per guide per user
+  @@index([userId])
+  @@index([guideId])
+}
+
+// ── Promo codes ───────────────────────────────────────────
+
+model PromoCode {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  discountPercent Int       // 0-100
+  maxUses         Int?      // null = unlimited
+  usedCount       Int       @default(0)
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  @@index([code])
+}
