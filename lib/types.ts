@@ -1,5 +1,7 @@
 // ── Guide types ──────────────────────────────────────────
 
+import type { MarqueeThemeId } from './marquee-themes'
+
 export type GuideCategory =
   | 'cafe'
   | 'restaurant'
@@ -31,6 +33,8 @@ export interface Guide {
   placeCount: number
   pageCount: number
   mapStyleUrl?: string
+  /** Themes used for homepage marquee filters (see MARQUEE_THEMES). */
+  themeTags?: readonly MarqueeThemeId[]
   createdAt: string
   updatedAt: string
 }

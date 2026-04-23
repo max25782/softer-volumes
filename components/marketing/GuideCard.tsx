@@ -2,9 +2,15 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { formatPrice } from '@/lib/utils'
+import { formatPrice, MOCK_GUIDES } from '@/lib/utils'
 import type { Guide } from '@/lib/types'
+import {
+  filterGuidesByTheme,
+  labelForMarqueeTheme,
+  parseMarqueeTheme,
+} from '@/lib/marquee-themes'
 
 interface GuideCardProps {
   guide: Guide
@@ -35,6 +41,7 @@ export function GuideCard({ guide, index = 0, isPurchased = false }: GuideCardPr
                 src={guide.coverImage}
                 alt={guide.title}
                 fill
+                priority={index === 0}
                 className="object-cover img-sepia transition-transform duration-700 group-hover:scale-105"
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
               />
@@ -88,30 +95,59 @@ export function GuideCard({ guide, index = 0, isPurchased = false }: GuideCardPr
   )
 }
 
-// ── Guides Grid ───────────────────────────────────────────
-import { MOCK_GUIDES } from '@/lib/utils'
-
 export function GuidesGrid({ purchasedIds = [] }: { purchasedIds?: string[] }) {
+  const searchParams = useSearchParams()
+  const theme = parseMarqueeTheme(searchParams.get('theme'))
+  const guides = filterGuidesByTheme(MOCK_GUIDES, theme)
+
   return (
-    <section id="guides" className="section bg-warm">
+    <section id="guides" className="section bg-warm scroll-mt-24">
       <div className="mb-16">
         <p className="text-eyebrow mb-4">The Collection</p>
-        <h2 className="font-display font-light leading-tight"
-          style={{ fontSize: 'clamp(36px, 4.5vw, 64px)' }}>
-          Every city,<br />
+        <h2
+          className="font-display font-light leading-tight"
+          style={{ fontSize: 'clamp(36px, 4.5vw, 64px)' }}
+        >
+          Every city,
+          <br />
           <em className="text-gold">personally curated</em>
         </h2>
       </div>
 
+      {theme ? (
+        <div className="mb-10 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-gold/15 pb-6">
+          <p className="text-caption text-mist">
+            Showing guides tagged{' '}
+            <span className="text-ink">{labelForMarqueeTheme(theme)}</span>
+          </p>
+          <Link
+            href="/#guides"
+            className="text-[9px] tracking-[0.3em] uppercase text-gold hover:underline"
+          >
+            Clear filter
+          </Link>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-        {MOCK_GUIDES.map((guide, i) => (
-          <GuideCard
-            key={guide.id}
-            guide={guide as Guide}
-            index={i}
-            isPurchased={purchasedIds.includes(guide.id)}
-          />
-        ))}
+        {guides.length === 0 ? (
+          <p className="text-mist col-span-full max-w-md">
+            No city guides match this theme yet. Try another tag or{' '}
+            <Link href="/#guides" className="text-gold underline underline-offset-4">
+              show all guides
+            </Link>
+            .
+          </p>
+        ) : (
+          guides.map((guide, i) => (
+            <GuideCard
+              key={guide.id}
+              guide={guide as Guide}
+              index={i}
+              isPurchased={purchasedIds.includes(guide.id)}
+            />
+          ))
+        )}
       </div>
     </section>
   )

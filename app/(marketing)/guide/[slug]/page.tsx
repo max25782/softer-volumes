@@ -104,9 +104,9 @@ export default async function GuideLandingPage({ params }: Props) {
               src={guide.heroImage}
               alt={guide.title}
               fill
-              className="object-cover img-sepia"
               priority
-              sizes="50vw"
+              className="object-cover img-sepia"
+              sizes="(min-width: 768px) 50vw, 0px"
             />
           </div>
           <div

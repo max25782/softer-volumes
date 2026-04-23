@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import type { GuideCategory } from './types'
+import type { MarqueeThemeId } from './marquee-themes'
 
 // ── Class merging ─────────────────────────────────────────
 export function cn(...inputs: ClassValue[]) {
@@ -90,6 +91,15 @@ export const MOCK_GUIDES = [
     isPublished: true,
     placeCount: 120,
     pageCount: 0,
+    themeTags: [
+      'specialty-coffee',
+      'hanok-stays',
+      'hidden-bars',
+      'fine-dining',
+      'night-markets',
+      'concept-stores',
+      'cultural-spaces',
+    ] satisfies MarqueeThemeId[],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -107,6 +117,15 @@ export const MOCK_GUIDES = [
     isPublished: true,
     placeCount: 110,
     pageCount: 0,
+    themeTags: [
+      'specialty-coffee',
+      'design-hotels',
+      'fine-dining',
+      'hidden-bars',
+      'concept-stores',
+      'cultural-spaces',
+      'rooftop-views',
+    ] satisfies MarqueeThemeId[],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -124,6 +143,14 @@ export const MOCK_GUIDES = [
     isPublished: true,
     placeCount: 95,
     pageCount: 0,
+    themeTags: [
+      'fine-dining',
+      'night-markets',
+      'hidden-bars',
+      'cultural-spaces',
+      'specialty-coffee',
+      'rooftop-views',
+    ] satisfies MarqueeThemeId[],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -141,6 +168,13 @@ export const MOCK_GUIDES = [
     isPublished: true,
     placeCount: 85,
     pageCount: 0,
+    themeTags: [
+      'wellness-spas',
+      'design-hotels',
+      'cultural-spaces',
+      'fine-dining',
+      'concept-stores',
+    ] satisfies MarqueeThemeId[],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },

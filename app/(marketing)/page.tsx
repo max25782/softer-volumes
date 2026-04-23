@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
+import Image from 'next/image'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { HeroSection } from '@/components/marketing/HeroSection'
@@ -19,11 +21,24 @@ export default function HomePage() {
         {/* Hero */}
         <HeroSection />
 
-        {/* Marquee */}
-        <Marquee />
+        <Suspense
+          fallback={
+            <div
+              className="h-14 w-full border-y border-gold/15 bg-warm"
+              aria-hidden
+            />
+          }
+        >
+          <Marquee />
+        </Suspense>
 
-        {/* Guides grid */}
-        <GuidesGrid />
+        <Suspense
+          fallback={
+            <section className="section min-h-[320px] bg-warm" aria-hidden />
+          }
+        >
+          <GuidesGrid />
+        </Suspense>
 
         {/* About / Personal brand section */}
         <section className="section bg-paper grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
@@ -45,16 +60,21 @@ export default function HomePage() {
           </Reveal>
 
           <Reveal delay={2} className="relative">
-            {/* Placeholder for her photo */}
-            <div
-              className="aspect-[3/4] bg-charcoal/10 relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, #e8e0d0 0%, #d4c8b8 100%)',
-              }}
-            >
+            <div className="aspect-[3/4] relative overflow-hidden bg-charcoal/10">
+              <Image
+                src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=900&q=85"
+                alt="Portrait of the curator"
+                fill
+                className="object-cover img-sepia"
+                sizes="(min-width: 768px) 42vw, 92vw"
+              />
+              <div
+                className="absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/10 to-transparent pointer-events-none"
+                aria-hidden
+              />
               <div className="absolute inset-0 flex items-end p-8">
-                <div>
-                  <p className="font-korean text-2xl text-paper/40 mb-1">서울</p>
+                <div className="relative z-10">
+                  <p className="font-korean text-2xl text-paper/90 mb-1">서울</p>
                   <p className="text-eyebrow text-gold">YOUR NAME HERE</p>
                 </div>
               </div>

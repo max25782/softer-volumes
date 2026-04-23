@@ -90,7 +90,7 @@ export function HeroSection() {
               fill
               priority
               className="object-cover img-sepia"
-              sizes="50vw"
+              sizes="(min-width: 768px) 50vw, 0px"
             />
           </div>
         </motion.div>

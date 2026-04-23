@@ -1,11 +1,10 @@
+import { PrismaAdapter } from '@auth/prisma-adapter'
+import { UserRole } from '@prisma/client'
 import NextAuth from 'next-auth'
+import type { NextAuthConfig } from 'next-auth'
 import Google from 'next-auth/providers/google'
 import Apple from 'next-auth/providers/apple'
-// import Resend from 'next-auth/providers/resend'
-// import { PrismaAdapter } from '@auth/prisma-adapter'
-// import { prisma } from '@/lib/prisma'
-//
-// Resend (magic link) requires a database adapter — enable together with PrismaAdapter + prisma.
+import { prisma } from '@/lib/prisma'
 
 const authSecret =
   process.env.AUTH_SECRET ??
@@ -13,10 +12,12 @@ const authSecret =
     ? 'softer-volumes-local-dev-secret-min-32-chars!'
     : undefined)
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+const nextAuthConfig: NextAuthConfig = {
+  // Required for /api/auth on localhost and many hosts; set AUTH_TRUST_HOST=false to opt out
+  trustHost: process.env.AUTH_TRUST_HOST !== 'false',
   secret: authSecret,
 
-  // adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma) as NextAuthConfig['adapter'],
 
   providers: [
     Google({
@@ -31,15 +32,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
 
   callbacks: {
-    session({ session, token }) {
+    async session({ session, token }) {
       if (token.sub) {
         session.user.id = token.sub
       }
+      session.user.role = (token.role as UserRole | undefined) ?? 'user'
       return session
     },
-    jwt({ token, user }) {
-      if (user) {
+    async jwt({ token, user, trigger }) {
+      if (user?.id) {
         token.sub = user.id
+        const row = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { role: true },
+        })
+        token.role = row?.role ?? 'user'
+      } else if (token.sub) {
+        if (trigger === 'update' || !token.role) {
+          const row = await prisma.user.findUnique({
+            where: { id: token.sub },
+            select: { role: true },
+          })
+          if (row) token.role = row.role
+        }
       }
       return token
     },
@@ -54,4 +69,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
-})
+}
+
+export const { handlers, signIn, signOut, auth } = NextAuth(nextAuthConfig)
