@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
+import { recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
 export async function POST(req: Request) {
@@ -27,27 +28,24 @@ export async function POST(req: Request) {
       const session = event.data.object as Stripe.Checkout.Session
 
       if (session.payment_status === 'paid') {
-        const { userId, guideId, guideSlug } = session.metadata!
+        const userId = session.metadata?.userId
+        const guideId = session.metadata?.guideId
+        const paymentId =
+          typeof session.payment_intent === 'string' ? session.payment_intent : session.id
 
-        // TODO: Save purchase to DB
-        // await prisma.purchase.create({
-        //   data: {
-        //     userId,
-        //     guideId,
-        //     stripePaymentId: session.payment_intent as string,
-        //     amount: session.amount_total!,
-        //     currency: session.currency!,
-        //   },
-        // })
+        if (!userId || !guideId || session.amount_total === null || !session.currency) {
+          console.error('Stripe session missing required purchase metadata', session.id)
+          break
+        }
 
-        // TODO: Send confirmation email via Resend
-        // await sendPurchaseConfirmationEmail({
-        //   to: session.customer_email!,
-        //   guideTitle: ...,
-        //   guideUrl: `https://yourdomain.com/guides/${guideSlug}`,
-        // })
-
-        console.log(`Purchase confirmed: user=${userId} guide=${guideId}`)
+        await recordCompletedPurchase({
+          userId,
+          guideId,
+          amount: session.amount_total,
+          currency: session.currency,
+          provider: 'stripe',
+          externalId: paymentId,
+        })
       }
       break
     }

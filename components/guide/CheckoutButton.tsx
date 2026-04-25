@@ -16,13 +16,13 @@ export function CheckoutButton({
   variant = 'outline',
   className,
 }: CheckoutButtonProps) {
-  const [loading, setLoading] = useState(false)
+  const [loadingProvider, setLoadingProvider] = useState<'stripe' | 'paypal' | null>(null)
   const router = useRouter()
 
-  async function handleCheckout() {
-    setLoading(true)
+  async function handleCheckout(provider: 'stripe' | 'paypal') {
+    setLoadingProvider(provider)
     try {
-      const res = await fetch('/api/checkout', {
+      const res = await fetch(provider === 'stripe' ? '/api/checkout' : '/api/checkout/paypal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guideId: guide.id, guideSlug: guide.slug }),
@@ -34,49 +34,64 @@ export function CheckoutButton({
         return
       }
 
-      const { url } = await res.json()
+      const data = (await res.json()) as { url?: string; approvalUrl?: string }
+      const url = data.url ?? data.approvalUrl
       if (url) window.location.href = url
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('Checkout error:', message)
     } finally {
-      setLoading(false)
+      setLoadingProvider(null)
     }
   }
 
+  const isLoading = loadingProvider !== null
+
   if (variant === 'gold') {
     return (
-      <button
-        onClick={handleCheckout}
-        disabled={loading}
-        className={cn(
-          'btn-gold w-full disabled:opacity-60 disabled:cursor-not-allowed',
-          className,
-        )}
-      >
-        <span>{loading ? 'Processing…' : `Unlock ${guide.title}`}</span>
-        {!loading && <span>→</span>}
-        {loading && (
-          <span className="w-4 h-4 border border-ink/30 border-t-ink rounded-full animate-spin" />
-        )}
-      </button>
+      <div className={cn('grid gap-3', className)}>
+        <button
+          onClick={() => handleCheckout('stripe')}
+          disabled={isLoading}
+          className="btn-gold w-full disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <span>{loadingProvider === 'stripe' ? 'Processing…' : `Unlock ${guide.title}`}</span>
+          {loadingProvider !== 'stripe' && <span>→</span>}
+          {loadingProvider === 'stripe' && (
+            <span className="w-4 h-4 border border-ink/30 border-t-ink rounded-full animate-spin" />
+          )}
+        </button>
+        <button
+          onClick={() => handleCheckout('paypal')}
+          disabled={isLoading}
+          className="border border-gold/40 px-6 py-4 text-[10px] uppercase tracking-[0.3em] text-ink disabled:opacity-60"
+        >
+          {loadingProvider === 'paypal' ? 'Opening PayPal…' : 'Pay with PayPal'}
+        </button>
+      </div>
     )
   }
 
   return (
-    <button
-      onClick={handleCheckout}
-      disabled={loading}
-      className={cn(
-        'btn-primary disabled:opacity-60 disabled:cursor-not-allowed',
-        className,
-      )}
-    >
-      <span>{loading ? 'Processing…' : `Get ${guide.title} Guide`}</span>
-      {!loading && <span>→</span>}
-      {loading && (
-        <span className="w-3 h-3 border border-ink/30 border-t-ink rounded-full animate-spin" />
-      )}
-    </button>
+    <div className={cn('flex flex-wrap gap-3', className)}>
+      <button
+        onClick={() => handleCheckout('stripe')}
+        disabled={isLoading}
+        className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <span>{loadingProvider === 'stripe' ? 'Processing…' : `Get ${guide.title} Guide`}</span>
+        {loadingProvider !== 'stripe' && <span>→</span>}
+        {loadingProvider === 'stripe' && (
+          <span className="w-3 h-3 border border-ink/30 border-t-ink rounded-full animate-spin" />
+        )}
+      </button>
+      <button
+        onClick={() => handleCheckout('paypal')}
+        disabled={isLoading}
+        className="border border-gold/30 px-6 py-4 text-[9px] uppercase tracking-[0.3em] text-gold disabled:opacity-60"
+      >
+        {loadingProvider === 'paypal' ? 'Opening PayPal…' : 'PayPal'}
+      </button>
+    </div>
   )
 }

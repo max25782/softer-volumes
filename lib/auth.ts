@@ -1,10 +1,15 @@
 import { PrismaAdapter } from '@auth/prisma-adapter'
-import { UserRole } from '@prisma/client'
 import NextAuth from 'next-auth'
 import type { NextAuthConfig } from 'next-auth'
 import Google from 'next-auth/providers/google'
 import Apple from 'next-auth/providers/apple'
 import { prisma } from '@/lib/prisma'
+
+type UserRole = 'user' | 'admin' | 'superadmin'
+
+function isUserRole(value: unknown): value is UserRole {
+  return value === 'user' || value === 'admin' || value === 'superadmin'
+}
 
 const authSecret =
   process.env.AUTH_SECRET ??
@@ -36,7 +41,7 @@ const nextAuthConfig: NextAuthConfig = {
       if (token.sub) {
         session.user.id = token.sub
       }
-      session.user.role = (token.role as UserRole | undefined) ?? 'user'
+      session.user.role = isUserRole(token.role) ? token.role : 'user'
       return session
     },
     async jwt({ token, user, trigger }) {

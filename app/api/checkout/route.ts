@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { getStripe } from '@/lib/stripe'
 import { MOCK_GUIDES } from '@/lib/utils'
 
@@ -10,9 +11,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { guideId, guideSlug } = await req.json()
+  const { guideId, guideSlug } = (await req.json()) as {
+    guideId?: string
+    guideSlug?: string
+  }
 
-  const guide = MOCK_GUIDES.find((g) => g.id === guideId || g.slug === guideSlug)
+  const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
+  const guide =
+    dbGuide !== null
+      ? toGuide(dbGuide)
+      : MOCK_GUIDES.find((g) => g.id === guideId || g.slug === guideSlug)
   if (!guide) {
     return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
   }
@@ -50,7 +58,7 @@ export async function POST(req: Request) {
     automatic_tax: { enabled: true },
 
     metadata: {
-      userId: session.user.id as string,
+      userId: session.user.id,
       guideId: guide.id,
       guideSlug: guide.slug,
     },

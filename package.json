@@ -6,12 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "postinstall": "prisma generate",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "db:generate": "prisma generate",
-    "db:migrate:deploy": "dotenv-cli -e .env -- prisma migrate deploy",
-    "db:migrate:diff": "dotenv-cli -e .env -- sh -c 'prisma migrate diff --from-url \"$DIRECT_URL\" --to-schema-datamodel prisma/schema.prisma --script'",
-    "db:push": "dotenv-cli -e .env -- prisma db push"
+    "db:migrate:deploy": "dotenv -e .env -- prisma migrate deploy",
+    "db:migrate:diff": "dotenv -e .env -- sh -c 'prisma migrate diff --from-url \"$DIRECT_URL\" --to-schema-datamodel prisma/schema.prisma --script'",
+    "db:push": "dotenv -e .env -- prisma db push",
+    "db:seed": "dotenv -e .env -- node prisma/seed.js"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
