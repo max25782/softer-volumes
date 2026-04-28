@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, getCapturedPayPalPurchase } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -23,22 +23,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
   }
 
-  const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-  const externalId = paymentCapture?.id ?? capture.id
-  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+  const completedPurchase = getCapturedPayPalPurchase(capture)
 
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  if (!completedPurchase) {
+    return NextResponse.json({ error: 'PayPal capture missing purchase metadata' }, { status: 400 })
+  }
+
+  if (
+    completedPurchase.metadata.userId !== session.user.id ||
+    completedPurchase.metadata.guideId !== guideId
+  ) {
+    return NextResponse.json({ error: 'PayPal order does not match requested purchase' }, { status: 400 })
   }
 
   const purchase = await recordCompletedPurchase({
     userId: session.user.id,
-    guideId,
-    amount,
-    currency,
+    guideId: completedPurchase.metadata.guideId,
+    amount: completedPurchase.amount,
+    currency: completedPurchase.currency,
     provider: 'paypal',
-    externalId,
+    externalId: completedPurchase.externalId,
   })
 
   return NextResponse.json({ purchase })
