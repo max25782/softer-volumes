@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,47 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface PayPalPurchaseMetadata {
+  userId: string
+  guideId: string
+}
+
+export interface PayPalCapturedPurchase {
+  metadata: PayPalPurchaseMetadata
+  externalId: string
+  amount: number
+  currency: string
+}
+
+export function parsePayPalPurchaseMetadata(customId: string | undefined): PayPalPurchaseMetadata | null {
+  if (!customId) return null
+
+  const parts = customId.split(':')
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+
+  return { userId, guideId }
+}
+
+export function getCapturedPayPalPurchase(capture: PayPalCapture): PayPalCapturedPurchase | null {
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const metadata = parsePayPalPurchaseMetadata(purchaseUnit?.custom_id)
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+
+  if (!metadata || !paymentCapture?.id || amount <= 0) return null
+
+  return {
+    metadata,
+    externalId: paymentCapture.id,
+    amount,
+    currency,
+  }
 }
 
 function getPayPalBaseUrl(): string {

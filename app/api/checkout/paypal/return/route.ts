@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, getCapturedPayPalPurchase } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function GET(req: Request) {
@@ -17,21 +17,24 @@ export async function GET(req: Request) {
 
   try {
     const capture = await capturePayPalOrder(orderId)
-    const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-    const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-    const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+    const purchase = getCapturedPayPalPurchase(capture)
 
-    if (capture.status !== 'COMPLETED' || !paymentCapture?.id || amount <= 0) {
+    if (
+      capture.status !== 'COMPLETED' ||
+      !purchase ||
+      purchase.metadata.userId !== session.user.id ||
+      purchase.metadata.guideId !== guideId
+    ) {
       return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
     }
 
     await recordCompletedPurchase({
       userId: session.user.id,
-      guideId,
-      amount,
-      currency,
+      guideId: purchase.metadata.guideId,
+      amount: purchase.amount,
+      currency: purchase.currency,
       provider: 'paypal',
-      externalId: paymentCapture.id,
+      externalId: purchase.externalId,
     })
 
     return NextResponse.redirect(`${origin}/guides/${guideSlug}?paypal=success`)
