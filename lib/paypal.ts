@@ -4,10 +4,19 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
+interface PayPalCaptureDetails {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  externalId: string
+}
+
 interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -117,4 +126,30 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture
   }
 
   return (await response.json()) as PayPalCapture
+}
+
+export function getPayPalCaptureDetails(capture: PayPalCapture): PayPalCaptureDetails | null {
+  const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
+  const customId = capture.purchase_units?.[0]?.custom_id
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+
+  if (
+    customId === undefined ||
+    paymentCapture?.id === undefined ||
+    paymentCapture.status !== 'COMPLETED' ||
+    amount <= 0
+  ) {
+    return null
+  }
+
+  const [userId, guideId, ...extraParts] = customId.split(':')
+  if (!userId || !guideId || extraParts.length > 0) return null
+
+  return {
+    userId,
+    guideId,
+    amount,
+    currency: paymentCapture.amount?.currency_code ?? 'USD',
+    externalId: paymentCapture.id,
+  }
 }
