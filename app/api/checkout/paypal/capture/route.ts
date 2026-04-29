@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder, getPayPalCapturePurchase } from '@/lib/paypal'
+import { capturePayPalOrder, getPayPalCaptureDetails } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   }
 
   const capture = await capturePayPalOrder(orderId)
-  const purchase = getPayPalCapturePurchase(capture)
+  const purchase = getPayPalCaptureDetails(capture)
 
   if (capture.status !== 'COMPLETED' || purchase === null) {
     return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
