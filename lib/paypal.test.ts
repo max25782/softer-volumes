@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getCompletedPayPalCaptureDetails, type PayPalCapture } from './paypal'
+import type { CompletedPayPalCaptureDetails, PayPalCapture } from './paypal'
+
+const { getCompletedPayPalCaptureDetails } = (await import(
+  new URL('./paypal.ts', import.meta.url).href
+)) as {
+  getCompletedPayPalCaptureDetails: (
+    capture: PayPalCapture,
+    expected: { userId: string; guideId: string }
+  ) => CompletedPayPalCaptureDetails | null
+}
 
 function createCapture(overrides: Partial<PayPalCapture> = {}): PayPalCapture {
   return {
