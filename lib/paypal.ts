@@ -4,18 +4,37 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
-interface PayPalCapture {
+export interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
         status: string
+        custom_id?: string
         amount?: { value?: string; currency_code?: string }
       }>
     }
   }>
+}
+
+export interface CompletedPayPalCaptureDetails {
+  userId: string
+  guideId: string
+  externalId: string
+  amount: number
+  currency: string
+}
+
+function parseCustomId(customId: string | undefined): { userId: string; guideId: string } | null {
+  if (!customId) return null
+
+  const [userId, guideId, extra] = customId.split(':')
+  if (!userId || !guideId || extra !== undefined) return null
+
+  return { userId, guideId }
 }
 
 function getPayPalBaseUrl(): string {
@@ -117,4 +136,30 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture
   }
 
   return (await response.json()) as PayPalCapture
+}
+
+export function getCompletedPayPalCaptureDetails(
+  capture: PayPalCapture,
+  expected: { userId: string; guideId: string }
+): CompletedPayPalCaptureDetails | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const customId = parseCustomId(paymentCapture?.custom_id ?? purchaseUnit?.custom_id)
+  if (!customId) return null
+  if (customId.userId !== expected.userId || customId.guideId !== expected.guideId) return null
+
+  if (paymentCapture?.status !== 'COMPLETED') return null
+
+  const amount = Math.round(Number(paymentCapture.amount?.value ?? 0) * 100)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+
+  return {
+    userId: customId.userId,
+    guideId: customId.guideId,
+    externalId: paymentCapture.id,
+    amount,
+    currency: paymentCapture.amount?.currency_code ?? 'USD',
+  }
 }
