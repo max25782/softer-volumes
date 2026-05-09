@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import {
+  capturePayPalOrder,
+  getCompletedPayPalCaptureDetails,
+  isPayPalCaptureForGuide,
+} from '@/lib/paypal'
+import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { recordCompletedPurchase } from '@/lib/purchases'
+import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -19,26 +25,33 @@ export async function POST(req: Request) {
   }
 
   const capture = await capturePayPalOrder(orderId)
-  if (capture.status !== 'COMPLETED') {
+  const details = getCompletedPayPalCaptureDetails(capture)
+
+  if (!details) {
     return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
   }
 
-  const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-  const externalId = paymentCapture?.id ?? capture.id
-  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+  if (details.userId !== session.user.id || details.guideId !== guideId) {
+    return NextResponse.json({ error: 'PayPal order metadata mismatch' }, { status: 400 })
+  }
 
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  const dbGuide = await findGuideByIdOrSlug({ guideId: details.guideId, publishedOnly: true })
+  const guide =
+    dbGuide !== null
+      ? toGuide(dbGuide)
+      : MOCK_GUIDES.find((item) => item.id === details.guideId)
+
+  if (!guide || !isPayPalCaptureForGuide(details, guide)) {
+    return NextResponse.json({ error: 'PayPal capture does not match guide price' }, { status: 400 })
   }
 
   const purchase = await recordCompletedPurchase({
     userId: session.user.id,
-    guideId,
-    amount,
-    currency,
+    guideId: details.guideId,
+    amount: details.amount,
+    currency: details.currency,
     provider: 'paypal',
-    externalId,
+    externalId: details.externalId,
   })
 
   return NextResponse.json({ purchase })
