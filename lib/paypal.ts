@@ -4,18 +4,87 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
-interface PayPalCapture {
+export interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
         status: string
+        custom_id?: string
         amount?: { value?: string; currency_code?: string }
       }>
     }
   }>
+}
+
+export interface PayPalCaptureDetails {
+  userId: string
+  guideId: string
+  externalId: string
+  amount: number
+  currency: string
+}
+
+interface PayPalPricedGuide {
+  price: number
+  currency: string
+}
+
+function parsePayPalCustomId(customId?: string): { userId: string; guideId: string } | null {
+  const parts = customId?.split(':') ?? []
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+
+  return { userId, guideId }
+}
+
+function parsePayPalAmount(value?: string): number | null {
+  if (!value || !/^\d+(?:\.\d{1,2})?$/.test(value)) return null
+
+  const [major, minor = ''] = value.split('.')
+  const amount = Number(major) * 100 + Number(minor.padEnd(2, '0'))
+
+  return Number.isSafeInteger(amount) ? amount : null
+}
+
+export function getCompletedPayPalCaptureDetails(
+  capture: PayPalCapture,
+): PayPalCaptureDetails | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.find(
+    (item) => item.status === 'COMPLETED',
+  )
+
+  const metadata = parsePayPalCustomId(paymentCapture?.custom_id ?? purchaseUnit?.custom_id)
+  const amount = parsePayPalAmount(paymentCapture?.amount?.value)
+  const currency = paymentCapture?.amount?.currency_code
+  const externalId = paymentCapture?.id ?? capture.id
+
+  if (!metadata || amount === null || !currency || !externalId) return null
+
+  return {
+    ...metadata,
+    externalId,
+    amount,
+    currency,
+  }
+}
+
+export function isPayPalCaptureForGuide(
+  details: PayPalCaptureDetails,
+  guide: PayPalPricedGuide,
+): boolean {
+  return (
+    details.amount === guide.price &&
+    details.currency.toLowerCase() === guide.currency.toLowerCase()
+  )
 }
 
 function getPayPalBaseUrl(): string {
