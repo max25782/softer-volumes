@@ -1,7 +1,14 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
+import {
+  getPayPalAccessToken,
+  isExpectedPayPalCapture,
+  parsePayPalAmountToCents,
+  parsePayPalCustomId,
+} from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
+import { MOCK_GUIDES } from '@/lib/utils'
 
 interface PayPalWebhookBody {
   event_type?: string
@@ -54,19 +61,46 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
-    const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
+    const customId = parsePayPalCustomId(body.resource.custom_id)
+    const amount = parsePayPalAmountToCents(body.resource.amount?.value)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
-      await recordCompletedPurchase({
-        userId,
-        guideId,
-        amount,
-        currency,
-        provider: 'paypal',
-        externalId: body.resource.id,
+    if (customId && body.resource.id && amount !== null) {
+      const dbGuide = await findGuideByIdOrSlug({
+        guideId: customId.guideId,
+        publishedOnly: true,
       })
+      const guide =
+        dbGuide !== null
+          ? toGuide(dbGuide)
+          : MOCK_GUIDES.find((item) => item.id === customId.guideId)
+
+      if (
+        guide &&
+        isExpectedPayPalCapture(
+          {
+            ...customId,
+            amount,
+            currency,
+            externalId: body.resource.id,
+          },
+          {
+            userId: customId.userId,
+            guideId: guide.id,
+            amount: guide.price,
+            currency: guide.currency,
+          },
+        )
+      ) {
+        await recordCompletedPurchase({
+          userId: customId.userId,
+          guideId: customId.guideId,
+          amount,
+          currency,
+          provider: 'paypal',
+          externalId: body.resource.id,
+        })
+      }
     }
   }
 
