@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
+import {
+  capturePayPalOrder,
+  getCompletedPayPalCaptureDetails,
+  isExpectedPayPalCapture,
+} from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
+import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function GET(req: Request) {
   const session = await auth()
@@ -17,24 +23,37 @@ export async function GET(req: Request) {
 
   try {
     const capture = await capturePayPalOrder(orderId)
-    const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-    const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-    const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+    const details = getCompletedPayPalCaptureDetails(capture)
+    if (!details || details.guideId !== guideId) {
+      return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+    }
 
-    if (capture.status !== 'COMPLETED' || !paymentCapture?.id || amount <= 0) {
+    const dbGuide = await findGuideByIdOrSlug({ guideId: details.guideId, publishedOnly: true })
+    const guide =
+      dbGuide !== null ? toGuide(dbGuide) : MOCK_GUIDES.find((item) => item.id === details.guideId)
+
+    if (
+      !guide ||
+      !isExpectedPayPalCapture(details, {
+        userId: session.user.id,
+        guideId: guide.id,
+        amount: guide.price,
+        currency: guide.currency,
+      })
+    ) {
       return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
     }
 
     await recordCompletedPurchase({
-      userId: session.user.id,
-      guideId,
-      amount,
-      currency,
+      userId: details.userId,
+      guideId: details.guideId,
+      amount: details.amount,
+      currency: details.currency,
       provider: 'paypal',
-      externalId: paymentCapture.id,
+      externalId: details.externalId,
     })
 
-    return NextResponse.redirect(`${origin}/guides/${guideSlug}?paypal=success`)
+    return NextResponse.redirect(`${origin}/guides/${guide.slug}?paypal=success`)
   } catch {
     return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
   }

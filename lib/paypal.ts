@@ -4,10 +4,11 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
-interface PayPalCapture {
+export interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,76 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface PayPalCaptureDetails {
+  userId: string
+  guideId: string
+  externalId: string
+  amount: number
+  currency: string
+}
+
+export function parsePayPalCustomId(customId: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  const parts = customId?.split(':') ?? []
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+
+  return { userId, guideId }
+}
+
+export function parsePayPalAmountToCents(value: string | undefined): number | null {
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+
+  return Math.round(amount * 100)
+}
+
+export function getCompletedPayPalCaptureDetails(
+  capture: PayPalCapture,
+): PayPalCaptureDetails | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const customId = parsePayPalCustomId(purchaseUnit?.custom_id)
+  const paymentCapture = purchaseUnit?.payments?.captures?.find(
+    (item) => item.status === 'COMPLETED',
+  )
+  const amount = parsePayPalAmountToCents(paymentCapture?.amount?.value)
+
+  if (!customId || !paymentCapture?.id || amount === null || !paymentCapture.amount?.currency_code) {
+    return null
+  }
+
+  return {
+    userId: customId.userId,
+    guideId: customId.guideId,
+    externalId: paymentCapture.id,
+    amount,
+    currency: paymentCapture.amount.currency_code,
+  }
+}
+
+export function isExpectedPayPalCapture(
+  details: PayPalCaptureDetails,
+  expected: {
+    userId: string
+    guideId: string
+    amount: number
+    currency: string
+  },
+): boolean {
+  return (
+    details.userId === expected.userId &&
+    details.guideId === expected.guideId &&
+    details.amount === expected.amount &&
+    details.currency.toLowerCase() === expected.currency.toLowerCase()
+  )
 }
 
 function getPayPalBaseUrl(): string {
