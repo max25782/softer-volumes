@@ -8,14 +8,54 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
         status: string
+        custom_id?: string
         amount?: { value?: string; currency_code?: string }
       }>
     }
   }>
+}
+
+export interface CompletedPayPalPurchase {
+  userId: string
+  guideId: string
+  externalId: string
+  amount: number
+  currency: string
+}
+
+export function parsePayPalCustomId(customId: string | undefined): { userId: string; guideId: string } | null {
+  if (!customId) return null
+
+  const [userId, guideId, extra] = customId.split(':')
+  if (!userId || !guideId || extra !== undefined) return null
+
+  return { userId, guideId }
+}
+
+export function getCompletedPayPalPurchase(capture: PayPalCapture): CompletedPayPalPurchase | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const externalId = paymentCapture?.id ?? capture.id
+  const amountValue = Number(paymentCapture?.amount?.value)
+  const amount = Number.isFinite(amountValue) ? Math.round(amountValue * 100) : 0
+  const currency = paymentCapture?.amount?.currency_code
+  const parsedCustomId = parsePayPalCustomId(paymentCapture?.custom_id ?? purchaseUnit?.custom_id)
+
+  if (!externalId || !parsedCustomId || amount <= 0 || !currency) return null
+
+  return {
+    ...parsedCustomId,
+    externalId,
+    amount,
+    currency,
+  }
 }
 
 function getPayPalBaseUrl(): string {
@@ -88,7 +128,7 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${input.guideSlug}`,
         cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
       },
     }),

@@ -1,6 +1,7 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { findGuideByIdOrSlug } from '@/lib/guides'
+import { getPayPalAccessToken, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -54,14 +55,20 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const purchaseMetadata = parsePayPalCustomId(body.resource.custom_id)
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (purchaseMetadata && body.resource.id && amount > 0) {
+      const guide = await findGuideByIdOrSlug({ guideId: purchaseMetadata.guideId, publishedOnly: true })
+      if (!guide || amount !== guide.price || currency.toLowerCase() !== guide.currency.toLowerCase()) {
+        console.error('PayPal webhook purchase metadata does not match a published guide', body.resource.id)
+        return NextResponse.json({ received: true })
+      }
+
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: purchaseMetadata.userId,
+        guideId: purchaseMetadata.guideId,
         amount,
         currency,
         provider: 'paypal',

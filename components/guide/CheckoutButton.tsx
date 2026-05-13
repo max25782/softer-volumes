@@ -25,7 +25,7 @@ export function CheckoutButton({
       const res = await fetch(provider === 'stripe' ? '/api/checkout' : '/api/checkout/paypal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guideId: guide.id, guideSlug: guide.slug }),
+        body: JSON.stringify({ guideSlug: guide.slug }),
       })
 
       if (res.status === 401) {
