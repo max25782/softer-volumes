@@ -113,19 +113,26 @@ export async function findGuideByIdOrSlug(input: {
   guideSlug?: string
   publishedOnly?: boolean
 }) {
-  const where =
-    input.guideId !== undefined
-      ? { id: input.guideId }
-      : input.guideSlug !== undefined
-        ? { slug: input.guideSlug }
-        : undefined
+  const publishedFilter = input.publishedOnly === true ? { isPublished: true } : {}
 
-  if (!where) return null
+  if (input.guideId !== undefined) {
+    const guide = await prisma.guide.findFirst({
+      where: {
+        id: input.guideId,
+        ...publishedFilter,
+      },
+      include: { _count: { select: { places: true } } },
+    })
+
+    if (guide !== null || input.guideSlug === undefined) return guide
+  }
+
+  if (input.guideSlug === undefined) return null
 
   return prisma.guide.findFirst({
     where: {
-      ...where,
-      ...(input.publishedOnly === true ? { isPublished: true } : {}),
+      slug: input.guideSlug,
+      ...publishedFilter,
     },
     include: { _count: { select: { places: true } } },
   })
