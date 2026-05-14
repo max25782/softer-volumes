@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
+import { findGuideByIdOrSlug } from '@/lib/guides'
 import { recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
@@ -38,9 +39,15 @@ export async function POST(req: Request) {
           break
         }
 
+        const guide = await findGuideByIdOrSlug({ guideId, publishedOnly: true })
+        if (!guide || guide.price !== session.amount_total || guide.currency.toLowerCase() !== session.currency.toLowerCase()) {
+          console.error('Stripe session purchase metadata mismatch', session.id)
+          break
+        }
+
         await recordCompletedPurchase({
           userId,
-          guideId,
+          guideId: guide.id,
           amount: session.amount_total,
           currency: session.currency,
           provider: 'stripe',
