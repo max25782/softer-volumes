@@ -1,6 +1,7 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { findGuideByIdOrSlug } from '@/lib/guides'
+import { getPayPalAccessToken, parsePayPalAmountCents, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -54,14 +55,23 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
-    const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
+    const customId = parsePayPalCustomId(body.resource.custom_id)
+    const amount = parsePayPalAmountCents(body.resource.amount?.value)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (customId && body.resource.id && amount !== null && amount > 0) {
+      const guide = await findGuideByIdOrSlug({
+        guideId: customId.guideId,
+        publishedOnly: true,
+      })
+
+      if (!guide || guide.price !== amount || guide.currency.toLowerCase() !== currency.toLowerCase()) {
+        return NextResponse.json({ error: 'PayPal purchase metadata mismatch' }, { status: 400 })
+      }
+
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: customId.userId,
+        guideId: guide.id,
         amount,
         currency,
         provider: 'paypal',

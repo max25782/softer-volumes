@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -18,10 +19,63 @@ interface PayPalCapture {
   }>
 }
 
+export interface PayPalPurchaseDetails {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  externalId: string
+}
+
 function getPayPalBaseUrl(): string {
   return process.env.PAYPAL_ENV === 'live'
     ? 'https://api-m.paypal.com'
     : 'https://api-m.sandbox.paypal.com'
+}
+
+export function parsePayPalCustomId(customId: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  if (!customId) return null
+  const parts = customId.split(':')
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+  return { userId, guideId }
+}
+
+export function parsePayPalAmountCents(value: string | undefined): number | null {
+  if (!value || !/^\d+(\.\d{1,2})?$/.test(value)) return null
+
+  const [whole, fraction = ''] = value.split('.')
+  const cents = Number.parseInt(whole, 10) * 100 + Number.parseInt(fraction.padEnd(2, '0'), 10)
+  return Number.isSafeInteger(cents) ? cents : null
+}
+
+export function getPayPalCapturePurchaseDetails(
+  capture: PayPalCapture,
+): PayPalPurchaseDetails | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  if (!paymentCapture || paymentCapture.status !== 'COMPLETED') return null
+
+  const customId = parsePayPalCustomId(purchaseUnit?.custom_id)
+  const amount = parsePayPalAmountCents(paymentCapture.amount?.value)
+  const currency = paymentCapture.amount?.currency_code
+
+  if (!customId || amount === null || amount <= 0 || !currency) return null
+
+  return {
+    userId: customId.userId,
+    guideId: customId.guideId,
+    amount,
+    currency,
+    externalId: paymentCapture.id,
+  }
 }
 
 function getPayPalCredentials(): { clientId: string; clientSecret: string } {

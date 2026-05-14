@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { findGuideByIdOrSlug } from '@/lib/guides'
+import { capturePayPalOrder, getPayPalCapturePurchaseDetails } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -9,36 +10,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { orderId, guideId } = (await req.json()) as {
+  const { orderId } = (await req.json()) as {
     orderId?: string
-    guideId?: string
   }
 
-  if (!orderId || !guideId) {
-    return NextResponse.json({ error: 'orderId and guideId are required' }, { status: 400 })
+  if (!orderId) {
+    return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   }
 
   const capture = await capturePayPalOrder(orderId)
-  if (capture.status !== 'COMPLETED') {
-    return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
+  const details = getPayPalCapturePurchaseDetails(capture)
+  if (!details) return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
+
+  if (details.userId !== session.user.id) {
+    return NextResponse.json({ error: 'PayPal order does not belong to this user' }, { status: 403 })
   }
 
-  const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-  const externalId = paymentCapture?.id ?? capture.id
-  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+  const guide = await findGuideByIdOrSlug({ guideId: details.guideId, publishedOnly: true })
+  if (!guide) return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
 
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  if (guide.price !== details.amount || guide.currency.toLowerCase() !== details.currency.toLowerCase()) {
+    return NextResponse.json({ error: 'PayPal capture amount mismatch' }, { status: 400 })
   }
 
   const purchase = await recordCompletedPurchase({
     userId: session.user.id,
-    guideId,
-    amount,
-    currency,
+    guideId: guide.id,
+    amount: details.amount,
+    currency: details.currency,
     provider: 'paypal',
-    externalId,
+    externalId: details.externalId,
   })
 
   return NextResponse.json({ purchase })

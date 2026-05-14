@@ -26,7 +26,9 @@ export default async function GuideInteriorPage({ params }: Props) {
   if (!dbGuide) notFound()
 
   const session = await auth()
-  const hasAccess = await checkAccess(session!.user!.id, dbGuide.id)
+  if (!session?.user?.id) redirect(`/auth/signin?callbackUrl=/guides/${slug}`)
+
+  const hasAccess = await checkAccess(session.user.id, dbGuide.id)
 
   if (!hasAccess) {
     redirect(`/guide/${slug}?upgrade=true`)
