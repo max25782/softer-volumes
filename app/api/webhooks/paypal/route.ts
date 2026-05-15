@@ -1,5 +1,6 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { findGuideByIdOrSlug } from '@/lib/guides'
 import { getPayPalAccessToken } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
@@ -59,6 +60,16 @@ export async function POST(req: Request) {
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
     if (userId && guideId && body.resource.id && amount > 0) {
+      const guide = await findGuideByIdOrSlug({ guideId, publishedOnly: true })
+      if (
+        guide === null ||
+        amount !== guide.price ||
+        currency.toLowerCase() !== guide.currency.toLowerCase()
+      ) {
+        console.error('PayPal webhook purchase metadata mismatch', body.resource.id)
+        return NextResponse.json({ received: true })
+      }
+
       await recordCompletedPurchase({
         userId,
         guideId,

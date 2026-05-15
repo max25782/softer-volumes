@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
+import { findGuideByIdOrSlug } from '@/lib/guides'
 import { recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
@@ -35,6 +36,16 @@ export async function POST(req: Request) {
 
         if (!userId || !guideId || session.amount_total === null || !session.currency) {
           console.error('Stripe session missing required purchase metadata', session.id)
+          break
+        }
+
+        const guide = await findGuideByIdOrSlug({ guideId, publishedOnly: true })
+        if (
+          guide === null ||
+          session.amount_total !== guide.price ||
+          session.currency.toLowerCase() !== guide.currency.toLowerCase()
+        ) {
+          console.error('Stripe session purchase metadata mismatch', session.id)
           break
         }
 

@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,45 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface CompletedPayPalPurchase {
+  userId: string
+  guideId: string
+  captureId: string
+  amount: number
+  currency: string
+}
+
+export function parseCompletedPayPalPurchase(capture: PayPalCapture): CompletedPayPalPurchase | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture =
+    purchaseUnit?.payments?.captures?.find((item) => item.status === 'COMPLETED') ??
+    purchaseUnit?.payments?.captures?.[0]
+  const customIdParts = (purchaseUnit?.custom_id ?? '').split(':')
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code
+
+  if (
+    customIdParts.length !== 2 ||
+    !customIdParts[0] ||
+    !customIdParts[1] ||
+    !paymentCapture?.id ||
+    amount <= 0 ||
+    !currency
+  ) {
+    return null
+  }
+
+  return {
+    userId: customIdParts[0],
+    guideId: customIdParts[1],
+    captureId: paymentCapture.id,
+    amount,
+    currency,
+  }
 }
 
 function getPayPalBaseUrl(): string {
