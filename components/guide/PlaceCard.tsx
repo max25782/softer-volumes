@@ -71,7 +71,7 @@ export function PlaceCard({
           </p>
           {place.personalNote && (
             <p className="text-[10px] leading-relaxed text-mist/80 italic line-clamp-2">
-              "{place.personalNote}"
+              &quot;{place.personalNote}&quot;
             </p>
           )}
         </div>
@@ -134,7 +134,7 @@ export function PlaceCard({
 
         {place.personalNote && (
           <p className="text-[10px] leading-relaxed italic text-mist/80 mb-3 line-clamp-2 border-l-2 border-gold/30 pl-3">
-            "{place.personalNote}"
+            &quot;{place.personalNote}&quot;
           </p>
         )}
 
