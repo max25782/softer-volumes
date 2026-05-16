@@ -1,7 +1,7 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { getPayPalAccessToken } from '@/lib/paypal'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { recordValidatedCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
   event_type?: string
@@ -11,6 +11,12 @@ interface PayPalWebhookBody {
     custom_id?: string
     amount?: { value?: string; currency_code?: string }
   }
+}
+
+function parseCustomId(customId: string | undefined) {
+  const [userId, guideId, extra] = (customId ?? '').split(':')
+  if (!userId || !guideId || extra !== undefined) return null
+  return { userId, guideId }
 }
 
 async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
@@ -54,14 +60,14 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const customId = parseCustomId(body.resource.custom_id)
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
-    const currency = body.resource.amount?.currency_code ?? 'USD'
+    const currency = body.resource.amount?.currency_code
 
-    if (userId && guideId && body.resource.id && amount > 0) {
-      await recordCompletedPurchase({
-        userId,
-        guideId,
+    if (customId !== null && body.resource.id && amount > 0 && currency) {
+      await recordValidatedCompletedPurchase({
+        userId: customId.userId,
+        guideId: customId.guideId,
         amount,
         currency,
         provider: 'paypal',
