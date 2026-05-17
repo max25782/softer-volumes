@@ -38,14 +38,18 @@ export async function POST(req: Request) {
           break
         }
 
-        await recordCompletedPurchase({
-          userId,
-          guideId,
-          amount: session.amount_total,
-          currency: session.currency,
-          provider: 'stripe',
-          externalId: paymentId,
-        })
+        try {
+          await recordCompletedPurchase({
+            userId,
+            guideId,
+            amount: session.amount_total,
+            currency: session.currency,
+            provider: 'stripe',
+            externalId: paymentId,
+          })
+        } catch (error) {
+          console.error('Stripe purchase validation failed:', session.id, error)
+        }
       }
       break
     }

@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { getPayPalAccessToken, parsePayPalPurchaseBinding } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -54,19 +54,23 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const purchaseBinding = parsePayPalPurchaseBinding(body.resource.custom_id)
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
-      await recordCompletedPurchase({
-        userId,
-        guideId,
-        amount,
-        currency,
-        provider: 'paypal',
-        externalId: body.resource.id,
-      })
+    if (purchaseBinding && body.resource.id && amount > 0) {
+      try {
+        await recordCompletedPurchase({
+          userId: purchaseBinding.userId,
+          guideId: purchaseBinding.guideId,
+          amount,
+          currency,
+          provider: 'paypal',
+          externalId: body.resource.id,
+        })
+      } catch (error) {
+        console.error('PayPal purchase validation failed:', body.resource.id, error)
+      }
     }
   }
 
