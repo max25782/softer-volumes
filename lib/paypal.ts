@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,21 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface PayPalPurchaseBinding {
+  userId: string
+  guideId: string
+}
+
+export function parsePayPalPurchaseBinding(customId?: string): PayPalPurchaseBinding | null {
+  const parts = customId?.split(':') ?? []
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+
+  return { userId, guideId }
 }
 
 function getPayPalBaseUrl(): string {
@@ -65,6 +81,10 @@ export async function createPayPalOrder(input: {
 }): Promise<PayPalOrder> {
   const token = await getPayPalAccessToken()
   const value = (input.amount / 100).toFixed(2)
+  const returnParams = new URLSearchParams({
+    guideId: input.guideId,
+    guideSlug: input.guideSlug,
+  })
 
   const response = await fetch(`${getPayPalBaseUrl()}/v2/checkout/orders`, {
     method: 'POST',
@@ -88,7 +108,7 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
+        return_url: `${input.origin}/api/checkout/paypal/return?${returnParams.toString()}`,
         cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
       },
     }),

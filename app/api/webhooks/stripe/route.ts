@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 
         if (!userId || !guideId || session.amount_total === null || !session.currency) {
           console.error('Stripe session missing required purchase metadata', session.id)
-          break
+          return NextResponse.json({ error: 'Missing purchase metadata' }, { status: 500 })
         }
 
         await recordCompletedPurchase({
