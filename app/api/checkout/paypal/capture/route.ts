@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, parsePayPalPurchaseBinding } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -24,17 +24,26 @@ export async function POST(req: Request) {
   }
 
   const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
+  const purchaseBinding = parsePayPalPurchaseBinding(capture.purchase_units?.[0]?.custom_id)
   const externalId = paymentCapture?.id ?? capture.id
   const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
   const currency = paymentCapture?.amount?.currency_code ?? 'USD'
 
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  if (
+    !purchaseBinding ||
+    purchaseBinding.userId !== session.user.id ||
+    purchaseBinding.guideId !== guideId
+  ) {
+    return NextResponse.json({ error: 'PayPal capture metadata mismatch' }, { status: 400 })
+  }
+
+  if (paymentCapture?.status !== 'COMPLETED' || amount <= 0) {
+    return NextResponse.json({ error: 'PayPal capture missing completed amount' }, { status: 400 })
   }
 
   const purchase = await recordCompletedPurchase({
     userId: session.user.id,
-    guideId,
+    guideId: purchaseBinding.guideId,
     amount,
     currency,
     provider: 'paypal',
