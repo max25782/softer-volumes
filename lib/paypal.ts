@@ -8,14 +8,35 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
         status: string
+        custom_id?: string
         amount?: { value?: string; currency_code?: string }
       }>
     }
   }>
+}
+
+interface PayPalPurchaseIdentity {
+  userId: string
+  guideId: string
+}
+
+export interface CompletedPayPalCapture {
+  userId: string
+  guideId: string
+  externalId: string
+  amount: number
+  currency: string
+}
+
+export function parsePayPalCustomId(customId: string | undefined): PayPalPurchaseIdentity | null {
+  const parts = customId?.split(':') ?? []
+  if (parts.length !== 2 || parts[0] === '' || parts[1] === '') return null
+  return { userId: parts[0], guideId: parts[1] }
 }
 
 function getPayPalBaseUrl(): string {
@@ -88,8 +109,8 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
-        cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${encodeURIComponent(input.guideSlug)}`,
+        cancel_url: `${input.origin}/guide/${encodeURIComponent(input.guideSlug)}?paypal=cancelled`,
       },
     }),
   })
@@ -117,4 +138,34 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture
   }
 
   return (await response.json()) as PayPalCapture
+}
+
+export function parseCompletedPayPalCapture(
+  capture: PayPalCapture,
+): CompletedPayPalCapture | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture =
+    purchaseUnit?.payments?.captures?.find((item) => item.status === 'COMPLETED') ??
+    purchaseUnit?.payments?.captures?.[0]
+  const identity = parsePayPalCustomId(purchaseUnit?.custom_id ?? paymentCapture?.custom_id)
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code
+
+  if (
+    identity === null ||
+    paymentCapture?.id === undefined ||
+    currency === undefined ||
+    amount <= 0
+  ) {
+    return null
+  }
+
+  return {
+    ...identity,
+    externalId: paymentCapture.id,
+    amount,
+    currency,
+  }
 }

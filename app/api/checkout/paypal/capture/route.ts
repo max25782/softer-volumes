@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, parseCompletedPayPalCapture } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -14,32 +14,38 @@ export async function POST(req: Request) {
     guideId?: string
   }
 
-  if (!orderId || !guideId) {
-    return NextResponse.json({ error: 'orderId and guideId are required' }, { status: 400 })
+  if (!orderId) {
+    return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   }
 
   const capture = await capturePayPalOrder(orderId)
-  if (capture.status !== 'COMPLETED') {
+  const completedCapture = parseCompletedPayPalCapture(capture)
+
+  if (completedCapture === null) {
     return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
   }
 
-  const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-  const externalId = paymentCapture?.id ?? capture.id
-  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
-
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  if (completedCapture.userId !== session.user.id) {
+    return NextResponse.json({ error: 'PayPal order does not belong to this user' }, { status: 403 })
   }
 
-  const purchase = await recordCompletedPurchase({
-    userId: session.user.id,
-    guideId,
-    amount,
-    currency,
-    provider: 'paypal',
-    externalId,
-  })
+  if (guideId !== undefined && guideId !== completedCapture.guideId) {
+    return NextResponse.json({ error: 'PayPal order does not match requested guide' }, { status: 400 })
+  }
 
-  return NextResponse.json({ purchase })
+  try {
+    const purchase = await recordCompletedPurchase({
+      userId: completedCapture.userId,
+      guideId: completedCapture.guideId,
+      amount: completedCapture.amount,
+      currency: completedCapture.currency,
+      provider: 'paypal',
+      externalId: completedCapture.externalId,
+    })
+
+    return NextResponse.json({ purchase })
+  } catch (error) {
+    console.error('PayPal capture validation failed:', error)
+    return NextResponse.json({ error: 'Invalid PayPal purchase' }, { status: 400 })
+  }
 }
