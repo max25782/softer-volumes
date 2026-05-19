@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { getPayPalAccessToken, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -54,19 +54,27 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const identity = parsePayPalCustomId(body.resource.custom_id)
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
-    const currency = body.resource.amount?.currency_code ?? 'USD'
+    const currency = body.resource.amount?.currency_code
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (identity === null || body.resource.id === undefined || currency === undefined || amount <= 0) {
+      console.error('PayPal capture missing required purchase metadata', body.resource.id)
+      return NextResponse.json({ error: 'Invalid PayPal purchase metadata' }, { status: 400 })
+    }
+
+    try {
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: identity.userId,
+        guideId: identity.guideId,
         amount,
         currency,
         provider: 'paypal',
         externalId: body.resource.id,
       })
+    } catch (error) {
+      console.error('PayPal purchase validation failed:', error)
+      return NextResponse.json({ error: 'Invalid PayPal purchase' }, { status: 400 })
     }
   }
 

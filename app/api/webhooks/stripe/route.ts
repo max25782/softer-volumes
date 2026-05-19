@@ -35,17 +35,22 @@ export async function POST(req: Request) {
 
         if (!userId || !guideId || session.amount_total === null || !session.currency) {
           console.error('Stripe session missing required purchase metadata', session.id)
-          break
+          return NextResponse.json({ error: 'Invalid Stripe purchase metadata' }, { status: 400 })
         }
 
-        await recordCompletedPurchase({
-          userId,
-          guideId,
-          amount: session.amount_total,
-          currency: session.currency,
-          provider: 'stripe',
-          externalId: paymentId,
-        })
+        try {
+          await recordCompletedPurchase({
+            userId,
+            guideId,
+            amount: session.amount_total,
+            currency: session.currency,
+            provider: 'stripe',
+            externalId: paymentId,
+          })
+        } catch (error) {
+          console.error('Stripe purchase validation failed:', error)
+          return NextResponse.json({ error: 'Invalid Stripe purchase' }, { status: 400 })
+        }
       }
       break
     }
