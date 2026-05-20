@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { createPayPalOrder } from '@/lib/paypal'
-import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -16,10 +15,7 @@ export async function POST(req: Request) {
   }
 
   const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
-  const guide =
-    dbGuide !== null
-      ? toGuide(dbGuide)
-      : MOCK_GUIDES.find((g) => g.id === guideId || g.slug === guideSlug)
+  const guide = dbGuide !== null ? toGuide(dbGuide) : null
 
   if (!guide) return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
 
