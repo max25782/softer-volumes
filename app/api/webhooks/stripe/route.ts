@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
+import { findGuideByIdOrSlug } from '@/lib/guides'
 import { recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
       if (session.payment_status === 'paid') {
         const userId = session.metadata?.userId
         const guideId = session.metadata?.guideId
+        const guideSlug = session.metadata?.guideSlug
         const paymentId =
           typeof session.payment_intent === 'string' ? session.payment_intent : session.id
 
@@ -38,9 +40,15 @@ export async function POST(req: Request) {
           break
         }
 
+        const guide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
+        if (!guide) {
+          console.error('Stripe session references an unpublished or missing guide', session.id)
+          break
+        }
+
         await recordCompletedPurchase({
           userId,
-          guideId,
+          guideId: guide.id,
           amount: session.amount_total,
           currency: session.currency,
           provider: 'stripe',

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import type { Guide, GuideCategory, GuideCity, Place } from '@/lib/types'
+import type { Guide, GuideCategory, Place } from '@/lib/types'
 
 interface DbGuide {
   id: string
@@ -46,10 +46,6 @@ interface DbPlace {
   }>
 }
 
-function isGuideCity(value: string): value is GuideCity {
-  return ['seoul', 'tokyo', 'bangkok', 'bali', 'singapore'].includes(value)
-}
-
 function isGuideCategory(value: string): value is GuideCategory {
   return ['cafe', 'restaurant', 'bar', 'hotel', 'shop', 'culture', 'wellness'].includes(value)
 }
@@ -61,7 +57,7 @@ function priceRange(value: number | null): 1 | 2 | 3 | 4 | undefined {
 export function toGuide(guide: DbGuide): Guide {
   return {
     id: guide.id,
-    slug: isGuideCity(guide.slug) ? guide.slug : 'seoul',
+    slug: guide.slug,
     title: guide.title,
     subtitle: guide.subtitle,
     description: guide.description,
@@ -113,18 +109,16 @@ export async function findGuideByIdOrSlug(input: {
   guideSlug?: string
   publishedOnly?: boolean
 }) {
-  const where =
-    input.guideId !== undefined
-      ? { id: input.guideId }
-      : input.guideSlug !== undefined
-        ? { slug: input.guideSlug }
-        : undefined
+  const clauses = [
+    input.guideId !== undefined ? { id: input.guideId } : null,
+    input.guideSlug !== undefined ? { slug: input.guideSlug } : null,
+  ].filter((clause): clause is { id: string } | { slug: string } => clause !== null)
 
-  if (!where) return null
+  if (clauses.length === 0) return null
 
   return prisma.guide.findFirst({
     where: {
-      ...where,
+      OR: clauses,
       ...(input.publishedOnly === true ? { isPublished: true } : {}),
     },
     include: { _count: { select: { places: true } } },
