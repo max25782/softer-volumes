@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,14 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface CompletedPayPalCaptureDetails {
+  userId: string
+  guideId: string
+  externalId: string
+  amount: number
+  currency: string
 }
 
 function getPayPalBaseUrl(): string {
@@ -31,6 +40,42 @@ function getPayPalCredentials(): { clientId: string; clientSecret: string } {
     throw new Error('PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must be set')
   }
   return { clientId, clientSecret }
+}
+
+export function parsePayPalCustomId(
+  customId: string | undefined,
+): { userId: string; guideId: string } | null {
+  const parts = customId?.split(':') ?? []
+  if (parts.length !== 2 || parts[0].length === 0 || parts[1].length === 0) return null
+  return { userId: parts[0], guideId: parts[1] }
+}
+
+export function getCompletedPayPalCaptureDetails(
+  capture: PayPalCapture,
+): CompletedPayPalCaptureDetails | null {
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const metadata = parsePayPalCustomId(purchaseUnit?.custom_id)
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code
+
+  if (
+    capture.status !== 'COMPLETED' ||
+    paymentCapture?.status !== 'COMPLETED' ||
+    !paymentCapture.id ||
+    !metadata ||
+    amount <= 0 ||
+    !currency
+  ) {
+    return null
+  }
+
+  return {
+    ...metadata,
+    externalId: paymentCapture.id,
+    amount,
+    currency,
+  }
 }
 
 export async function getPayPalAccessToken(): Promise<string> {
@@ -61,10 +106,14 @@ export async function createPayPalOrder(input: {
   title: string
   amount: number
   currency: string
-  origin: string
+  appOrigin: string
 }): Promise<PayPalOrder> {
   const token = await getPayPalAccessToken()
   const value = (input.amount / 100).toFixed(2)
+  const returnUrl = new URL('/api/checkout/paypal/return', input.appOrigin)
+  returnUrl.searchParams.set('guideSlug', input.guideSlug)
+  const cancelUrl = new URL(`/guide/${encodeURIComponent(input.guideSlug)}`, input.appOrigin)
+  cancelUrl.searchParams.set('paypal', 'cancelled')
 
   const response = await fetch(`${getPayPalBaseUrl()}/v2/checkout/orders`, {
     method: 'POST',
@@ -88,8 +137,8 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
-        cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
+        return_url: returnUrl.toString(),
+        cancel_url: cancelUrl.toString(),
       },
     }),
   })
