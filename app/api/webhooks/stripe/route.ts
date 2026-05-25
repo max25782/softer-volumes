@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { PurchaseValidationError, recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
 export async function POST(req: Request) {
@@ -38,14 +38,23 @@ export async function POST(req: Request) {
           break
         }
 
-        await recordCompletedPurchase({
-          userId,
-          guideId,
-          amount: session.amount_total,
-          currency: session.currency,
-          provider: 'stripe',
-          externalId: paymentId,
-        })
+        try {
+          await recordCompletedPurchase({
+            userId,
+            guideId,
+            amount: session.amount_total,
+            currency: session.currency,
+            provider: 'stripe',
+            externalId: paymentId,
+          })
+        } catch (err) {
+          if (err instanceof PurchaseValidationError) {
+            console.error('Rejected Stripe purchase fulfillment:', err.message, session.id)
+            return NextResponse.json({ error: 'Invalid purchase details' }, { status: 400 })
+          }
+
+          throw err
+        }
       }
       break
     }
