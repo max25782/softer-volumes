@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
+import { getAppBaseUrl } from '@/lib/app-url'
 import { auth } from '@/lib/auth'
 import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { createPayPalOrder } from '@/lib/paypal'
-import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -10,20 +10,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { guideId, guideSlug } = (await req.json()) as {
-    guideId?: string
+  const { guideSlug } = (await req.json()) as {
     guideSlug?: string
   }
 
-  const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
-  const guide =
-    dbGuide !== null
-      ? toGuide(dbGuide)
-      : MOCK_GUIDES.find((g) => g.id === guideId || g.slug === guideSlug)
+  if (!guideSlug) {
+    return NextResponse.json({ error: 'guideSlug is required' }, { status: 400 })
+  }
 
-  if (!guide) return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
+  const dbGuide = await findGuideByIdOrSlug({ guideSlug, publishedOnly: true })
+  if (dbGuide === null) return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
 
-  const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const guide = toGuide(dbGuide)
+  const origin = getAppBaseUrl()
   const order = await createPayPalOrder({
     userId: session.user.id,
     guideId: guide.id,
