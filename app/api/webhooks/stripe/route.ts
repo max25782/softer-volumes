@@ -33,19 +33,23 @@ export async function POST(req: Request) {
         const paymentId =
           typeof session.payment_intent === 'string' ? session.payment_intent : session.id
 
-        if (!userId || !guideId || session.amount_total === null || !session.currency) {
+        if (!userId || !guideId || session.amount_subtotal === null || !session.currency) {
           console.error('Stripe session missing required purchase metadata', session.id)
           break
         }
 
-        await recordCompletedPurchase({
+        const purchase = await recordCompletedPurchase({
           userId,
           guideId,
-          amount: session.amount_total,
+          amount: session.amount_subtotal,
           currency: session.currency,
           provider: 'stripe',
           externalId: paymentId,
         })
+
+        if (purchase === null) {
+          console.error('Stripe session did not match a published guide price', session.id)
+        }
       }
       break
     }

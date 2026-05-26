@@ -1,41 +1,51 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, parsePayPalPurchaseMetadata } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
+import { getAppBaseUrl } from '@/lib/url'
 
 export async function GET(req: Request) {
   const session = await auth()
   const url = new URL(req.url)
   const orderId = url.searchParams.get('token')
-  const guideId = url.searchParams.get('guideId')
   const guideSlug = url.searchParams.get('guideSlug') ?? ''
-  const origin = url.origin
+  const appBaseUrl = getAppBaseUrl(req)
+  const failedRedirect = `${appBaseUrl}/guide/${encodeURIComponent(guideSlug)}?paypal=failed`
 
-  if (!session?.user?.id || !orderId || !guideId) {
-    return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+  if (!session?.user?.id || !orderId) {
+    return NextResponse.redirect(failedRedirect)
   }
 
   try {
     const capture = await capturePayPalOrder(orderId)
-    const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
+    const purchaseUnit = capture.purchase_units?.[0]
+    const purchaseMetadata = parsePayPalPurchaseMetadata(purchaseUnit?.custom_id)
+    const paymentCapture = purchaseUnit?.payments?.captures?.[0]
     const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
     const currency = paymentCapture?.amount?.currency_code ?? 'USD'
 
-    if (capture.status !== 'COMPLETED' || !paymentCapture?.id || amount <= 0) {
-      return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+    if (
+      capture.status !== 'COMPLETED' ||
+      !paymentCapture?.id ||
+      purchaseMetadata?.userId !== session.user.id ||
+      amount <= 0
+    ) {
+      return NextResponse.redirect(failedRedirect)
     }
 
-    await recordCompletedPurchase({
+    const purchase = await recordCompletedPurchase({
       userId: session.user.id,
-      guideId,
+      guideId: purchaseMetadata.guideId,
       amount,
       currency,
       provider: 'paypal',
       externalId: paymentCapture.id,
     })
 
-    return NextResponse.redirect(`${origin}/guides/${guideSlug}?paypal=success`)
+    if (purchase === null) return NextResponse.redirect(failedRedirect)
+
+    return NextResponse.redirect(`${appBaseUrl}/guides/${purchase.guide.slug}?paypal=success`)
   } catch {
-    return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+    return NextResponse.redirect(failedRedirect)
   }
 }

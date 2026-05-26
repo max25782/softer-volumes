@@ -2,6 +2,15 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+interface CompletedPurchaseInput {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  externalId: string
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -20,14 +29,28 @@ export async function assertPurchasedGuide(userId: string, guideId: string): Pro
   if (!hasPurchase) throw new Error('Purchase required')
 }
 
-export async function recordCompletedPurchase(input: {
-  userId: string
-  guideId: string
-  amount: number
-  currency: string
-  provider: PaymentProvider
-  externalId: string
-}) {
+export async function recordCompletedPurchase(input: CompletedPurchaseInput) {
+  const guide = await prisma.guide.findFirst({
+    where: {
+      id: input.guideId,
+      isPublished: true,
+    },
+    select: {
+      id: true,
+      price: true,
+      currency: true,
+    },
+  })
+  const normalizedCurrency = input.currency.toLowerCase()
+
+  if (
+    guide === null ||
+    guide.price !== input.amount ||
+    guide.currency.toLowerCase() !== normalizedCurrency
+  ) {
+    return null
+  }
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
@@ -38,7 +61,7 @@ export async function recordCompletedPurchase(input: {
     update: {
       status: 'completed',
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizedCurrency,
       paymentProvider: input.provider,
       refundedAt: null,
       ...(input.provider === 'stripe'
@@ -49,11 +72,18 @@ export async function recordCompletedPurchase(input: {
       userId: input.userId,
       guideId: input.guideId,
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizedCurrency,
       paymentProvider: input.provider,
       ...(input.provider === 'stripe'
         ? { stripePaymentId: input.externalId }
         : { paypalOrderId: input.externalId }),
+    },
+    include: {
+      guide: {
+        select: {
+          slug: true,
+        },
+      },
     },
   })
 }
