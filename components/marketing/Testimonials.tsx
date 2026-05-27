@@ -41,7 +41,7 @@ export function Testimonials() {
                 className="absolute top-4 left-8 font-display text-7xl font-light text-gold/20 leading-none select-none"
                 aria-hidden
               >
-                "
+                &quot;
               </span>
 
               <p className="font-display text-xl font-light italic leading-[1.65] text-charcoal mt-8 mb-8">
