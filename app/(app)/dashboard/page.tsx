@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 }
 
 // In production: fetch from DB via Prisma
-async function getPurchases(userId: string) {
+async function getPurchases() {
   // return await prisma.purchase.findMany({
   //   where: { userId },
   //   include: { guide: true },
@@ -41,7 +41,7 @@ async function getPurchases(userId: string) {
 
 export default async function DashboardPage() {
   const session = await auth()
-  const purchases = await getPurchases(session!.user!.id as string)
+  const purchases = await getPurchases()
   const hasPurchases = purchases.length > 0
 
   return (
