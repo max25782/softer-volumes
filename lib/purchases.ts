@@ -2,6 +2,44 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+export class PurchaseValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PurchaseValidationError'
+  }
+}
+
+function normalizeCurrency(currency: string): string {
+  return currency.toLowerCase()
+}
+
+async function assertPurchaseMatchesGuide(input: {
+  guideId: string
+  amount: number
+  currency: string
+}): Promise<void> {
+  const guide = await prisma.guide.findFirst({
+    where: {
+      id: input.guideId,
+      isPublished: true,
+    },
+    select: {
+      id: true,
+      price: true,
+      currency: true,
+    },
+  })
+
+  if (!guide) throw new PurchaseValidationError('Published guide not found for purchase')
+
+  if (
+    guide.price !== input.amount ||
+    normalizeCurrency(guide.currency) !== normalizeCurrency(input.currency)
+  ) {
+    throw new PurchaseValidationError('Purchase amount or currency does not match guide price')
+  }
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -28,6 +66,8 @@ export async function recordCompletedPurchase(input: {
   provider: PaymentProvider
   externalId: string
 }) {
+  await assertPurchaseMatchesGuide(input)
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
@@ -38,7 +78,7 @@ export async function recordCompletedPurchase(input: {
     update: {
       status: 'completed',
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizeCurrency(input.currency),
       paymentProvider: input.provider,
       refundedAt: null,
       ...(input.provider === 'stripe'
@@ -49,7 +89,7 @@ export async function recordCompletedPurchase(input: {
       userId: input.userId,
       guideId: input.guideId,
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizeCurrency(input.currency),
       paymentProvider: input.provider,
       ...(input.provider === 'stripe'
         ? { stripePaymentId: input.externalId }

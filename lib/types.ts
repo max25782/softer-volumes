@@ -11,12 +11,7 @@ export type GuideCategory =
   | 'culture'
   | 'wellness'
 
-export type GuideCity =
-  | 'seoul'
-  | 'tokyo'
-  | 'bangkok'
-  | 'bali'
-  | 'singapore'
+export type GuideCity = string
 
 export interface Guide {
   id: string
