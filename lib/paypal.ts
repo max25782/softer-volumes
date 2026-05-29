@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,59 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+interface PayPalPurchaseMetadata {
+  userId: string
+  guideId: string
+}
+
+export interface CompletedPayPalPurchase {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  externalId: string
+}
+
+export function parsePayPalCustomId(customId?: string): PayPalPurchaseMetadata | null {
+  const parts = customId?.split(':') ?? []
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+
+  return { userId, guideId }
+}
+
+export function getCompletedPayPalPurchase(capture: PayPalCapture): CompletedPayPalPurchase | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const metadata = parsePayPalCustomId(purchaseUnit?.custom_id)
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const amountValue = Number(paymentCapture?.amount?.value)
+  const currency = paymentCapture?.amount?.currency_code
+
+  if (
+    metadata === null ||
+    paymentCapture === undefined ||
+    paymentCapture.status !== 'COMPLETED' ||
+    paymentCapture.id === '' ||
+    !Number.isFinite(amountValue) ||
+    amountValue <= 0 ||
+    currency === undefined ||
+    currency === ''
+  ) {
+    return null
+  }
+
+  return {
+    ...metadata,
+    amount: Math.round(amountValue * 100),
+    currency,
+    externalId: paymentCapture.id,
+  }
 }
 
 function getPayPalBaseUrl(): string {
