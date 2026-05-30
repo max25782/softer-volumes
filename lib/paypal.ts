@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -88,8 +89,8 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
-        cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${encodeURIComponent(input.guideSlug)}`,
+        cancel_url: `${input.origin}/guide/${encodeURIComponent(input.guideSlug)}?paypal=cancelled`,
       },
     }),
   })
@@ -117,4 +118,26 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture
   }
 
   return (await response.json()) as PayPalCapture
+}
+
+export function parsePayPalCustomId(value: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  if (value === undefined) return null
+
+  const [userId, guideId, ...extra] = value.split(':')
+  if (!userId || !guideId || extra.length > 0) return null
+
+  return { userId, guideId }
+}
+
+export function parsePayPalAmount(value: string | undefined): number | null {
+  if (value === undefined) return null
+
+  const parsedValue = Number.parseFloat(value)
+  if (!Number.isFinite(parsedValue)) return null
+
+  const amount = Math.round(parsedValue * 100)
+  return amount > 0 ? amount : null
 }
