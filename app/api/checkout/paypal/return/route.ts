@@ -1,40 +1,38 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { getAppBaseUrl } from '@/lib/app-url'
+import { capturePayPalOrder, parseCompletedPayPalPurchase } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function GET(req: Request) {
   const session = await auth()
   const url = new URL(req.url)
   const orderId = url.searchParams.get('token')
-  const guideId = url.searchParams.get('guideId')
   const guideSlug = url.searchParams.get('guideSlug') ?? ''
-  const origin = url.origin
+  const origin = getAppBaseUrl()
 
-  if (!session?.user?.id || !orderId || !guideId) {
+  if (!session?.user?.id || !orderId) {
     return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
   }
 
   try {
     const capture = await capturePayPalOrder(orderId)
-    const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-    const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-    const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+    const completedPurchase = parseCompletedPayPalPurchase(capture)
 
-    if (capture.status !== 'COMPLETED' || !paymentCapture?.id || amount <= 0) {
+    if (completedPurchase === null || completedPurchase.userId !== session.user.id) {
       return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
     }
 
-    await recordCompletedPurchase({
-      userId: session.user.id,
-      guideId,
-      amount,
-      currency,
+    const purchase = await recordCompletedPurchase({
+      userId: completedPurchase.userId,
+      guideId: completedPurchase.guideId,
+      amount: completedPurchase.amount,
+      currency: completedPurchase.currency,
       provider: 'paypal',
-      externalId: paymentCapture.id,
+      externalId: completedPurchase.externalId,
     })
 
-    return NextResponse.redirect(`${origin}/guides/${guideSlug}?paypal=success`)
+    return NextResponse.redirect(`${origin}/guides/${purchase.guide.slug}?paypal=success`)
   } catch {
     return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
   }
