@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { PurchaseValidationError, recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
 export async function POST(req: Request) {
@@ -33,19 +33,35 @@ export async function POST(req: Request) {
         const paymentId =
           typeof session.payment_intent === 'string' ? session.payment_intent : session.id
 
-        if (!userId || !guideId || session.amount_total === null || !session.currency) {
+        if (
+          !userId ||
+          !guideId ||
+          session.amount_subtotal === null ||
+          session.amount_total === null ||
+          !session.currency
+        ) {
           console.error('Stripe session missing required purchase metadata', session.id)
           break
         }
 
-        await recordCompletedPurchase({
-          userId,
-          guideId,
-          amount: session.amount_total,
-          currency: session.currency,
-          provider: 'stripe',
-          externalId: paymentId,
-        })
+        try {
+          await recordCompletedPurchase({
+            userId,
+            guideId,
+            amount: session.amount_total,
+            expectedAmount: session.amount_subtotal,
+            currency: session.currency,
+            provider: 'stripe',
+            externalId: paymentId,
+          })
+        } catch (error) {
+          if (error instanceof PurchaseValidationError) {
+            console.error('Stripe session failed purchase validation', session.id, error.message)
+            return NextResponse.json({ error: error.message }, { status: 400 })
+          }
+
+          throw error
+        }
       }
       break
     }

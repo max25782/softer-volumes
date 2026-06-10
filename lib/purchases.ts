@@ -2,6 +2,42 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+export class PurchaseValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PurchaseValidationError'
+  }
+}
+
+function normalizeCurrency(currency: string): string {
+  return currency.toLowerCase()
+}
+
+async function validateCompletedPurchase(input: {
+  guideId: string
+  amountToValidate: number
+  currency: string
+}) {
+  const guide = await prisma.guide.findFirst({
+    where: { id: input.guideId, isPublished: true },
+    select: { id: true, price: true, currency: true, slug: true },
+  })
+
+  if (guide === null) {
+    throw new PurchaseValidationError('Purchase guide was not found or is unpublished')
+  }
+
+  if (guide.price !== input.amountToValidate) {
+    throw new PurchaseValidationError('Purchase amount does not match guide price')
+  }
+
+  if (normalizeCurrency(guide.currency) !== normalizeCurrency(input.currency)) {
+    throw new PurchaseValidationError('Purchase currency does not match guide currency')
+  }
+
+  return guide
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -24,10 +60,17 @@ export async function recordCompletedPurchase(input: {
   userId: string
   guideId: string
   amount: number
+  expectedAmount?: number
   currency: string
   provider: PaymentProvider
   externalId: string
 }) {
+  await validateCompletedPurchase({
+    guideId: input.guideId,
+    amountToValidate: input.expectedAmount ?? input.amount,
+    currency: input.currency,
+  })
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
@@ -38,7 +81,7 @@ export async function recordCompletedPurchase(input: {
     update: {
       status: 'completed',
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizeCurrency(input.currency),
       paymentProvider: input.provider,
       refundedAt: null,
       ...(input.provider === 'stripe'
@@ -49,11 +92,18 @@ export async function recordCompletedPurchase(input: {
       userId: input.userId,
       guideId: input.guideId,
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizeCurrency(input.currency),
       paymentProvider: input.provider,
       ...(input.provider === 'stripe'
         ? { stripePaymentId: input.externalId }
         : { paypalOrderId: input.externalId }),
+    },
+    include: {
+      guide: {
+        select: {
+          slug: true,
+        },
+      },
     },
   })
 }

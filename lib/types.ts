@@ -20,7 +20,7 @@ export type GuideCity =
 
 export interface Guide {
   id: string
-  slug: GuideCity
+  slug: string
   title: string
   subtitle: string
   description: string

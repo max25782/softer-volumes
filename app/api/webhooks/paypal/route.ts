@@ -1,7 +1,7 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { getPayPalAccessToken, parsePayPalCustomId } from '@/lib/paypal'
+import { PurchaseValidationError, recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
   event_type?: string
@@ -15,7 +15,7 @@ interface PayPalWebhookBody {
 
 async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID
-  if (!webhookId) return process.env.NODE_ENV !== 'production'
+  if (!webhookId) return false
 
   const headersList = await headers()
   const token = await getPayPalAccessToken()
@@ -46,7 +46,14 @@ async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<
 
 export async function POST(req: Request) {
   const rawBody = await req.text()
-  const body = JSON.parse(rawBody) as PayPalWebhookBody
+  let body: PayPalWebhookBody
+
+  try {
+    body = JSON.parse(rawBody) as PayPalWebhookBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid PayPal webhook body' }, { status: 400 })
+  }
+
   const verified = await verifyWebhook(body, rawBody)
 
   if (!verified) {
@@ -54,19 +61,37 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
-    const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
-    const currency = body.resource.amount?.currency_code ?? 'USD'
+    const custom = parsePayPalCustomId(body.resource.custom_id)
+    const amountValue = Number(body.resource.amount?.value)
+    const amount = Math.round(amountValue * 100)
+    const currency = body.resource.amount?.currency_code
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (
+      custom === null ||
+      !body.resource.id ||
+      !Number.isFinite(amountValue) ||
+      amount <= 0 ||
+      currency === undefined ||
+      currency === ''
+    ) {
+      return NextResponse.json({ error: 'PayPal capture missing purchase metadata' }, { status: 400 })
+    }
+
+    try {
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: custom.userId,
+        guideId: custom.guideId,
         amount,
         currency,
         provider: 'paypal',
         externalId: body.resource.id,
       })
+    } catch (error) {
+      if (error instanceof PurchaseValidationError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+
+      throw error
     }
   }
 
