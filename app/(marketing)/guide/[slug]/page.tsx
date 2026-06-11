@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { MOCK_GUIDES, formatPrice } from '@/lib/utils'
+import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { Reveal, Eyebrow, Ornament } from '@/components/ui'
 import { CheckoutButton } from '@/components/guide/CheckoutButton'
 import type { Guide } from '@/lib/types'
@@ -10,18 +11,22 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
+export const dynamic = 'force-dynamic'
+
+async function getLandingGuide(slug: string): Promise<Guide | undefined> {
+  const dbGuide = await findGuideByIdOrSlug({ guideSlug: slug, publishedOnly: true })
+  if (dbGuide !== null) return toGuide(dbGuide)
+  return MOCK_GUIDES.find((g) => g.slug === slug)
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const guide = MOCK_GUIDES.find((g) => g.slug === slug)
+  const guide = await getLandingGuide(slug)
   if (!guide) return {}
   return {
     title: `${guide.title} City Guide`,
     description: guide.description,
   }
-}
-
-export async function generateStaticParams() {
-  return MOCK_GUIDES.map((g) => ({ slug: g.slug }))
 }
 
 const features = [
@@ -44,7 +49,7 @@ const categories = [
 
 export default async function GuideLandingPage({ params }: Props) {
   const { slug } = await params
-  const guide = MOCK_GUIDES.find((g) => g.slug === slug) as Guide | undefined
+  const guide = await getLandingGuide(slug)
   if (!guide) notFound()
 
   return (
@@ -173,13 +178,13 @@ export default async function GuideLandingPage({ params }: Props) {
       {/* ── FEATURES ── */}
       <section className="section bg-paper">
         <Reveal className="text-center mb-16">
-          <Eyebrow>What's Inside</Eyebrow>
+          <Eyebrow>What&apos;s Inside</Eyebrow>
           <h2
             className="font-display font-light"
             style={{ fontSize: 'clamp(36px, 4vw, 56px)' }}
           >
             Everything you need.<br />
-            <em className="text-gold">Nothing you don't.</em>
+            <em className="text-gold">Nothing you don&apos;t.</em>
           </h2>
         </Reveal>
 

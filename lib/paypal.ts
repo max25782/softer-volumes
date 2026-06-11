@@ -1,13 +1,14 @@
-interface PayPalOrder {
+export interface PayPalOrder {
   id: string
   status: string
   links?: Array<{ href: string; rel: string }>
 }
 
-interface PayPalCapture {
+export interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -88,7 +89,7 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${input.guideSlug}`,
         cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
       },
     }),
@@ -99,6 +100,37 @@ export async function createPayPalOrder(input: {
   }
 
   return (await response.json()) as PayPalOrder
+}
+
+export function getCompletedPayPalCaptureDetails(capture: PayPalCapture): {
+  customId: string
+  externalId: string
+  amount: number
+  currency: string
+} | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code
+
+  if (
+    !purchaseUnit?.custom_id ||
+    paymentCapture?.status !== 'COMPLETED' ||
+    !paymentCapture.id ||
+    !currency ||
+    amount <= 0
+  ) {
+    return null
+  }
+
+  return {
+    customId: purchaseUnit.custom_id,
+    externalId: paymentCapture.id,
+    amount,
+    currency,
+  }
 }
 
 export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture> {

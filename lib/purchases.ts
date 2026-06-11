@@ -2,6 +2,23 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+export class PurchaseValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PurchaseValidationError'
+  }
+}
+
+export function parsePurchaseBinding(customId: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  if (customId === undefined) return null
+  const [userId, guideId, extra] = customId.split(':')
+  if (!userId || !guideId || extra !== undefined) return null
+  return { userId, guideId }
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -56,6 +73,45 @@ export async function recordCompletedPurchase(input: {
         : { paypalOrderId: input.externalId }),
     },
   })
+}
+
+export async function recordCompletedPurchaseForPublishedGuide(input: {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  externalId: string
+}) {
+  const guide = await prisma.guide.findFirst({
+    where: { id: input.guideId, isPublished: true },
+    select: {
+      id: true,
+      slug: true,
+      price: true,
+      currency: true,
+    },
+  })
+
+  if (guide === null) {
+    throw new PurchaseValidationError('Published guide not found')
+  }
+
+  const currency = input.currency.toLowerCase()
+  if (currency !== guide.currency.toLowerCase()) {
+    throw new PurchaseValidationError('Payment currency does not match guide currency')
+  }
+
+  if (input.amount < guide.price) {
+    throw new PurchaseValidationError('Payment amount is less than guide price')
+  }
+
+  const purchase = await recordCompletedPurchase({
+    ...input,
+    currency,
+  })
+
+  return { purchase, guide }
 }
 
 export async function recalculateGuideRating(guideId: string) {
