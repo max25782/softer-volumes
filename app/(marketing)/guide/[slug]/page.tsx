@@ -11,6 +11,8 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
+export const dynamic = 'force-dynamic'
+
 async function getLandingGuide(slug: string): Promise<Guide | undefined> {
   const dbGuide = await findGuideByIdOrSlug({ guideSlug: slug, publishedOnly: true })
   if (dbGuide !== null) return toGuide(dbGuide)
@@ -25,10 +27,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: `${guide.title} City Guide`,
     description: guide.description,
   }
-}
-
-export async function generateStaticParams() {
-  return MOCK_GUIDES.map((g) => ({ slug: g.slug }))
 }
 
 const features = [
