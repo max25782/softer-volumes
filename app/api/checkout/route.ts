@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getAppOrigin } from '@/lib/app-url'
 import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { getStripe } from '@/lib/stripe'
-import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
   const session = await auth()
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -17,15 +17,12 @@ export async function POST(req: Request) {
   }
 
   const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
-  const guide =
-    dbGuide !== null
-      ? toGuide(dbGuide)
-      : MOCK_GUIDES.find((g) => g.id === guideId || g.slug === guideSlug)
-  if (!guide) {
+  if (dbGuide === null) {
     return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
   }
 
-  const origin = req.headers.get('origin') ?? 'http://localhost:3000'
+  const guide = toGuide(dbGuide)
+  const origin = getAppOrigin()
 
   const checkoutSession = await getStripe().checkout.sessions.create({
     mode: 'payment',

@@ -1,41 +1,54 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { getAppOrigin } from '@/lib/app-url'
+import { capturePayPalOrder, getCompletedPayPalCaptureDetails } from '@/lib/paypal'
+import {
+  parsePurchaseBinding,
+  PurchaseValidationError,
+  recordCompletedPurchaseForPublishedGuide,
+} from '@/lib/purchases'
+
+function failureUrl(origin: string, guideSlug: string): string {
+  return guideSlug ? `${origin}/guide/${guideSlug}?paypal=failed` : `${origin}/?paypal=failed`
+}
 
 export async function GET(req: Request) {
   const session = await auth()
   const url = new URL(req.url)
   const orderId = url.searchParams.get('token')
-  const guideId = url.searchParams.get('guideId')
   const guideSlug = url.searchParams.get('guideSlug') ?? ''
-  const origin = url.origin
+  const origin = getAppOrigin()
 
-  if (!session?.user?.id || !orderId || !guideId) {
-    return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+  if (!session?.user?.id || !orderId) {
+    return NextResponse.redirect(failureUrl(origin, guideSlug))
   }
 
   try {
     const capture = await capturePayPalOrder(orderId)
-    const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-    const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-    const currency = paymentCapture?.amount?.currency_code ?? 'USD'
-
-    if (capture.status !== 'COMPLETED' || !paymentCapture?.id || amount <= 0) {
-      return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+    const details = getCompletedPayPalCaptureDetails(capture)
+    if (details === null) {
+      return NextResponse.redirect(failureUrl(origin, guideSlug))
     }
 
-    await recordCompletedPurchase({
-      userId: session.user.id,
-      guideId,
-      amount,
-      currency,
+    const binding = parsePurchaseBinding(details.customId)
+    if (binding === null || binding.userId !== session.user.id) {
+      return NextResponse.redirect(failureUrl(origin, guideSlug))
+    }
+
+    const { guide } = await recordCompletedPurchaseForPublishedGuide({
+      userId: binding.userId,
+      guideId: binding.guideId,
+      amount: details.amount,
+      currency: details.currency,
       provider: 'paypal',
-      externalId: paymentCapture.id,
+      externalId: details.externalId,
     })
 
-    return NextResponse.redirect(`${origin}/guides/${guideSlug}?paypal=success`)
-  } catch {
-    return NextResponse.redirect(`${origin}/guide/${guideSlug}?paypal=failed`)
+    return NextResponse.redirect(`${origin}/guides/${guide.slug}?paypal=success`)
+  } catch (error) {
+    if (!(error instanceof PurchaseValidationError)) {
+      console.error('PayPal return fulfillment failed:', error)
+    }
+    return NextResponse.redirect(failureUrl(origin, guideSlug))
   }
 }
