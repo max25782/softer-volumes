@@ -4,10 +4,16 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
+export interface PayPalCustomId {
+  userId: string
+  guideId: string
+}
+
 interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +22,21 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export function parsePayPalCustomId(customId: string | undefined): PayPalCustomId | null {
+  const [userId, guideId, ...extra] = customId?.split(':') ?? []
+  if (
+    userId === undefined ||
+    guideId === undefined ||
+    extra.length > 0 ||
+    userId.trim() === '' ||
+    guideId.trim() === ''
+  ) {
+    return null
+  }
+
+  return { userId, guideId }
 }
 
 function getPayPalBaseUrl(): string {
@@ -65,6 +86,10 @@ export async function createPayPalOrder(input: {
 }): Promise<PayPalOrder> {
   const token = await getPayPalAccessToken()
   const value = (input.amount / 100).toFixed(2)
+  const returnUrl = new URL('/api/checkout/paypal/return', `${input.origin}/`)
+  returnUrl.searchParams.set('guideSlug', input.guideSlug)
+  const cancelUrl = new URL(`/guide/${input.guideSlug}`, `${input.origin}/`)
+  cancelUrl.searchParams.set('paypal', 'cancelled')
 
   const response = await fetch(`${getPayPalBaseUrl()}/v2/checkout/orders`, {
     method: 'POST',
@@ -88,8 +113,8 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
-        cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
+        return_url: returnUrl.toString(),
+        cancel_url: cancelUrl.toString(),
       },
     }),
   })

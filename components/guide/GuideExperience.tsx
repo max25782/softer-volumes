@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { PlaceCard } from './PlaceCard'
 import { GuideFiltersBar } from './GuideFilters'
-import type { Guide, Place, GuideFilters, GuideCategory } from '@/lib/types'
+import type { Guide, Place, GuideFilters } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // Lazy load map — heavy bundle

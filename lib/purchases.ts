@@ -2,6 +2,29 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+interface PurchaseGuideDetails {
+  id: string
+  price: number
+  currency: string
+  isPublished: boolean
+}
+
+function normalizeCurrency(currency: string): string {
+  return currency.toLowerCase()
+}
+
+export function doesPaymentMatchGuide(input: {
+  guide: PurchaseGuideDetails
+  amount: number
+  currency: string
+}): boolean {
+  return (
+    input.guide.isPublished &&
+    input.amount === input.guide.price &&
+    normalizeCurrency(input.currency) === normalizeCurrency(input.guide.currency)
+  )
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -28,6 +51,27 @@ export async function recordCompletedPurchase(input: {
   provider: PaymentProvider
   externalId: string
 }) {
+  const guide = await prisma.guide.findUnique({
+    where: { id: input.guideId },
+    select: {
+      id: true,
+      price: true,
+      currency: true,
+      isPublished: true,
+    },
+  })
+
+  if (
+    guide === null ||
+    !doesPaymentMatchGuide({
+      guide,
+      amount: input.amount,
+      currency: input.currency,
+    })
+  ) {
+    throw new Error('Payment does not match a published guide')
+  }
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
@@ -38,7 +82,7 @@ export async function recordCompletedPurchase(input: {
     update: {
       status: 'completed',
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizeCurrency(input.currency),
       paymentProvider: input.provider,
       refundedAt: null,
       ...(input.provider === 'stripe'
@@ -49,7 +93,7 @@ export async function recordCompletedPurchase(input: {
       userId: input.userId,
       guideId: input.guideId,
       amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      currency: normalizeCurrency(input.currency),
       paymentProvider: input.provider,
       ...(input.provider === 'stripe'
         ? { stripePaymentId: input.externalId }
