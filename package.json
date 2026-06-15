@@ -8,7 +8,7 @@
     "start": "next start",
     "test": "vitest run",
     "postinstall": "prisma generate",
-    "lint": "next lint",
+    "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "dotenv -e .env -- prisma migrate deploy",
