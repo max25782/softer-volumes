@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { recordValidatedCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 
 export async function POST(req: Request) {
@@ -38,14 +38,19 @@ export async function POST(req: Request) {
           break
         }
 
-        await recordCompletedPurchase({
-          userId,
-          guideId,
-          amount: session.amount_total,
-          currency: session.currency,
-          provider: 'stripe',
-          externalId: paymentId,
-        })
+        try {
+          await recordValidatedCompletedPurchase({
+            userId,
+            guideId,
+            amount: session.amount_total,
+            currency: session.currency,
+            provider: 'stripe',
+            externalId: paymentId,
+          })
+        } catch (error) {
+          console.error('Stripe session failed purchase validation', session.id, error)
+          return NextResponse.json({ error: 'Invalid purchase metadata' }, { status: 400 })
+        }
       }
       break
     }

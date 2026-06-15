@@ -8,14 +8,28 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
         status: string
         amount?: { value?: string; currency_code?: string }
+        custom_id?: string
       }>
     }
   }>
+}
+
+interface PayPalCustomId {
+  userId: string
+  guideId: string
+}
+
+interface CompletedPayPalCapture {
+  amount: number
+  currency: string
+  customId: PayPalCustomId
+  externalId: string
 }
 
 function getPayPalBaseUrl(): string {
@@ -88,8 +102,8 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
-        cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${encodeURIComponent(input.guideSlug)}`,
+        cancel_url: `${input.origin}/guide/${encodeURIComponent(input.guideSlug)}?paypal=cancelled`,
       },
     }),
   })
@@ -117,4 +131,42 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture
   }
 
   return (await response.json()) as PayPalCapture
+}
+
+export function parsePayPalCustomId(customId: string | undefined): PayPalCustomId | null {
+  if (customId === undefined) return null
+
+  const parts = customId.split(':')
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (userId === '' || guideId === '') return null
+
+  return { userId, guideId }
+}
+
+export function getCompletedPayPalCapture(capture: PayPalCapture): CompletedPayPalCapture | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.find(
+    (candidate) => candidate.status === 'COMPLETED',
+  )
+  if (paymentCapture === undefined) return null
+
+  const parsedAmount = Number(paymentCapture.amount?.value)
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return null
+
+  const currency = paymentCapture.amount?.currency_code
+  if (currency === undefined || currency === '') return null
+
+  const customId = parsePayPalCustomId(paymentCapture.custom_id ?? purchaseUnit?.custom_id)
+  if (customId === null) return null
+
+  return {
+    amount: Math.round(parsedAmount * 100),
+    currency,
+    customId,
+    externalId: paymentCapture.id,
+  }
 }
