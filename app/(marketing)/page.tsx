@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { HeroSection } from '@/components/marketing/HeroSection'
@@ -52,10 +53,10 @@ export default function HomePage() {
               <em className="text-gold">A lived experience.</em>
             </h2>
             <p className="font-display text-xl font-light leading-[1.7] text-charcoal mb-6">
-              I've been living and working across Asia for years — Seoul, Tokyo, Bangkok, Bali. These are not places I visited. They are places I call home.
+              I&apos;ve been living and working across Asia for years — Seoul, Tokyo, Bangkok, Bali. These are not places I visited. They are places I call home.
             </p>
             <p className="text-caption text-mist leading-relaxed max-w-md">
-              Every place in these guides was discovered on foot, tried personally, and held to one standard: would I go back? If the answer was yes — it's in the guide.
+              Every place in these guides was discovered on foot, tried personally, and held to one standard: would I go back? If the answer was yes — it&apos;s in the guide.
             </p>
           </Reveal>
 
@@ -109,10 +110,10 @@ export default function HomePage() {
             <p className="font-display text-xl font-light italic text-mist max-w-xl mx-auto mb-12">
               Lifetime access. Every place I love. One guide, one city.
             </p>
-            <a href="/#guides" className="btn-primary inline-flex border-gold text-paper">
+            <Link href="/#guides" className="btn-primary inline-flex border-gold text-paper">
               <span>View All Guides</span>
               <span>→</span>
-            </a>
+            </Link>
           </Reveal>
         </section>
       </main>
