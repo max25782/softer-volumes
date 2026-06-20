@@ -2,7 +2,6 @@
 
 import { cn } from '@/lib/utils'
 import { useInView } from 'react-intersection-observer'
-import { useEffect, useRef } from 'react'
 
 // ── Reveal animation wrapper ──────────────────────────────
 interface RevealProps {

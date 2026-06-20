@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { getPayPalAccessToken, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -15,7 +15,7 @@ interface PayPalWebhookBody {
 
 async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID
-  if (!webhookId) return process.env.NODE_ENV !== 'production'
+  if (!webhookId) return false
 
   const headersList = await headers()
   const token = await getPayPalAccessToken()
@@ -46,7 +46,12 @@ async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<
 
 export async function POST(req: Request) {
   const rawBody = await req.text()
-  const body = JSON.parse(rawBody) as PayPalWebhookBody
+  let body: PayPalWebhookBody
+  try {
+    body = JSON.parse(rawBody) as PayPalWebhookBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid PayPal webhook payload' }, { status: 400 })
+  }
   const verified = await verifyWebhook(body, rawBody)
 
   if (!verified) {
@@ -54,14 +59,17 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
-    const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
+    const purchaseBinding = parsePayPalCustomId(body.resource.custom_id)
+    const amountValue = Number(body.resource.amount?.value ?? 0)
+    const amount = Number.isFinite(amountValue) ? Math.round(amountValue * 100) : 0
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (purchaseBinding === null || !body.resource.id || amount <= 0) {
+      console.error('PayPal webhook missing required purchase metadata', body.resource.id)
+    } else {
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: purchaseBinding.userId,
+        guideId: purchaseBinding.guideId,
         amount,
         currency,
         provider: 'paypal',
