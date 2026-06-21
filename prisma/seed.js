@@ -1,8 +1,9 @@
-const { PrismaClient } = require('@prisma/client')
-
-const prisma = new PrismaClient()
+let prisma = null
 
 async function main() {
+  const { PrismaClient } = await import('@prisma/client')
+  prisma = new PrismaClient()
+
   const seoul = await prisma.guide.upsert({
     where: { slug: 'seoul' },
     update: {},
@@ -64,10 +65,10 @@ async function main() {
 
 main()
   .then(async () => {
-    await prisma.$disconnect()
+    await prisma?.$disconnect()
   })
   .catch(async (error) => {
     console.error(error)
-    await prisma.$disconnect()
+    await prisma?.$disconnect()
     process.exit(1)
   })

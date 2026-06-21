@@ -2,6 +2,22 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+interface CompletedPurchaseInput {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  externalId: string
+}
+
+interface PurchaseGuideSnapshot {
+  id: string
+  price: number
+  currency: string
+  isPublished: boolean
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -20,14 +36,28 @@ export async function assertPurchasedGuide(userId: string, guideId: string): Pro
   if (!hasPurchase) throw new Error('Purchase required')
 }
 
-export async function recordCompletedPurchase(input: {
-  userId: string
-  guideId: string
-  amount: number
-  currency: string
-  provider: PaymentProvider
-  externalId: string
-}) {
+export function assertPurchaseMatchesGuide(
+  input: Pick<CompletedPurchaseInput, 'guideId' | 'amount' | 'currency'>,
+  guide: PurchaseGuideSnapshot | null,
+) {
+  if (guide === null || !guide.isPublished || guide.id !== input.guideId) {
+    throw new Error('Purchase guide is not available')
+  }
+
+  const currency = input.currency.toLowerCase()
+  if (input.amount !== guide.price || currency !== guide.currency.toLowerCase()) {
+    throw new Error('Purchase amount does not match guide price')
+  }
+}
+
+export async function recordCompletedPurchase(input: CompletedPurchaseInput) {
+  const guide = await prisma.guide.findUnique({
+    where: { id: input.guideId },
+    select: { id: true, price: true, currency: true, isPublished: true },
+  })
+
+  assertPurchaseMatchesGuide(input, guide)
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
