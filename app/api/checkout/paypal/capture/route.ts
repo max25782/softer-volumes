@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, getPayPalCapturePurchase } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -9,13 +9,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { orderId, guideId } = (await req.json()) as {
+  const { orderId } = (await req.json()) as {
     orderId?: string
-    guideId?: string
   }
 
-  if (!orderId || !guideId) {
-    return NextResponse.json({ error: 'orderId and guideId are required' }, { status: 400 })
+  if (!orderId) {
+    return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   }
 
   const capture = await capturePayPalOrder(orderId)
@@ -23,18 +22,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
   }
 
-  const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
-  const externalId = paymentCapture?.id ?? capture.id
-  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
-  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+  const { externalId, amount, currency, metadata } = getPayPalCapturePurchase(capture)
 
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  if (metadata === null || metadata.userId !== session.user.id || amount <= 0) {
+    return NextResponse.json({ error: 'PayPal capture metadata mismatch' }, { status: 400 })
   }
 
   const purchase = await recordCompletedPurchase({
     userId: session.user.id,
-    guideId,
+    guideId: metadata.guideId,
     amount,
     currency,
     provider: 'paypal',

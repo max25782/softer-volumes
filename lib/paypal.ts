@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,35 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface PayPalPurchaseMetadata {
+  userId: string
+  guideId: string
+}
+
+export function parsePayPalCustomId(customId: string | undefined): PayPalPurchaseMetadata | null {
+  if (customId === undefined) return null
+
+  const [userId, guideId, extra] = customId.split(':')
+  if (!userId || !guideId || extra !== undefined) return null
+
+  return { userId, guideId }
+}
+
+export function getPayPalCapturePurchase(capture: PayPalCapture) {
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.[0]
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code ?? 'USD'
+  const metadata = parsePayPalCustomId(purchaseUnit?.custom_id)
+
+  return {
+    externalId: paymentCapture?.id ?? capture.id,
+    amount,
+    currency,
+    metadata,
+  }
 }
 
 function getPayPalBaseUrl(): string {
@@ -88,7 +118,7 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${input.guideSlug}`,
         cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
       },
     }),
