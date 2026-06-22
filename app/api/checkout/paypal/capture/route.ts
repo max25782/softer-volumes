@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { capturePayPalOrder } from '@/lib/paypal'
+import { capturePayPalOrder, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 export async function POST(req: Request) {
@@ -9,18 +9,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { orderId, guideId } = (await req.json()) as {
+  const { orderId } = (await req.json()) as {
     orderId?: string
-    guideId?: string
   }
 
-  if (!orderId || !guideId) {
-    return NextResponse.json({ error: 'orderId and guideId are required' }, { status: 400 })
+  if (!orderId) {
+    return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   }
 
   const capture = await capturePayPalOrder(orderId)
   if (capture.status !== 'COMPLETED') {
     return NextResponse.json({ error: 'PayPal order was not completed' }, { status: 400 })
+  }
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const metadata = parsePayPalCustomId(purchaseUnit?.custom_id)
+  if (metadata === null || metadata.userId !== session.user.id) {
+    return NextResponse.json({ error: 'PayPal order metadata mismatch' }, { status: 400 })
   }
 
   const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
@@ -32,14 +37,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
   }
 
-  const purchase = await recordCompletedPurchase({
-    userId: session.user.id,
-    guideId,
-    amount,
-    currency,
-    provider: 'paypal',
-    externalId,
-  })
-
-  return NextResponse.json({ purchase })
+  try {
+    const purchase = await recordCompletedPurchase({
+      userId: session.user.id,
+      guideId: metadata.guideId,
+      amount,
+      currency,
+      provider: 'paypal',
+      externalId,
+    })
+    return NextResponse.json({ purchase })
+  } catch {
+    return NextResponse.json({ error: 'PayPal payment does not match this guide' }, { status: 400 })
+  }
 }
