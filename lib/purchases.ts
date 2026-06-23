@@ -2,6 +2,49 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+interface CompletedPurchaseInput {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  externalId: string
+}
+
+export interface PurchaseMetadata {
+  userId: string
+  guideId: string
+}
+
+export class PurchaseValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PurchaseValidationError'
+  }
+}
+
+export function parsePurchaseMetadata(customId: string | null | undefined): PurchaseMetadata | null {
+  if (!customId) return null
+
+  const parts = customId.split(':')
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (!userId || !guideId) return null
+
+  return { userId, guideId }
+}
+
+export function parseMajorAmountToCents(value: string | null | undefined): number | null {
+  if (!value) return null
+
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return null
+
+  const cents = Math.round(amount * 100)
+  return cents > 0 ? cents : null
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -20,14 +63,26 @@ export async function assertPurchasedGuide(userId: string, guideId: string): Pro
   if (!hasPurchase) throw new Error('Purchase required')
 }
 
-export async function recordCompletedPurchase(input: {
-  userId: string
-  guideId: string
-  amount: number
-  currency: string
-  provider: PaymentProvider
-  externalId: string
-}) {
+async function validateCompletedPurchase(input: CompletedPurchaseInput): Promise<void> {
+  const guide = await prisma.guide.findFirst({
+    where: { id: input.guideId, isPublished: true },
+    select: { price: true, currency: true },
+  })
+
+  if (!guide) throw new PurchaseValidationError('Guide not found')
+
+  const currency = input.currency.toLowerCase()
+  if (guide.currency.toLowerCase() !== currency) {
+    throw new PurchaseValidationError('Purchase currency mismatch')
+  }
+  if (input.amount < guide.price) {
+    throw new PurchaseValidationError('Purchase amount is below guide price')
+  }
+}
+
+export async function recordCompletedPurchase(input: CompletedPurchaseInput) {
+  await validateCompletedPurchase(input)
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
