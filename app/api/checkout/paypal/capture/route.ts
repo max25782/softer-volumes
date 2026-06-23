@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { capturePayPalOrder } from '@/lib/paypal'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import {
+  parseMajorAmountToCents,
+  parsePurchaseMetadata,
+  PurchaseValidationError,
+  recordCompletedPurchase,
+} from '@/lib/purchases'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -9,13 +14,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { orderId, guideId } = (await req.json()) as {
+  const { orderId } = (await req.json()) as {
     orderId?: string
-    guideId?: string
   }
 
-  if (!orderId || !guideId) {
-    return NextResponse.json({ error: 'orderId and guideId are required' }, { status: 400 })
+  if (!orderId) {
+    return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   }
 
   const capture = await capturePayPalOrder(orderId)
@@ -24,22 +28,33 @@ export async function POST(req: Request) {
   }
 
   const paymentCapture = capture.purchase_units?.[0]?.payments?.captures?.[0]
+  const metadata = parsePurchaseMetadata(capture.purchase_units?.[0]?.custom_id)
   const externalId = paymentCapture?.id ?? capture.id
-  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const amount = parseMajorAmountToCents(paymentCapture?.amount?.value)
   const currency = paymentCapture?.amount?.currency_code ?? 'USD'
 
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'PayPal capture missing amount' }, { status: 400 })
+  if (!paymentCapture?.id || amount === null || metadata === null) {
+    return NextResponse.json({ error: 'PayPal capture missing purchase details' }, { status: 400 })
   }
 
-  const purchase = await recordCompletedPurchase({
-    userId: session.user.id,
-    guideId,
-    amount,
-    currency,
-    provider: 'paypal',
-    externalId,
-  })
+  if (metadata.userId !== session.user.id) {
+    return NextResponse.json({ error: 'PayPal capture belongs to another user' }, { status: 403 })
+  }
+
+  let purchase
+  try {
+    purchase = await recordCompletedPurchase({
+      userId: metadata.userId,
+      guideId: metadata.guideId,
+      amount,
+      currency,
+      provider: 'paypal',
+      externalId,
+    })
+  } catch (error) {
+    if (!(error instanceof PurchaseValidationError)) throw error
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
 
   return NextResponse.json({ purchase })
 }
