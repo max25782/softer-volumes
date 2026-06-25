@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
+import { toGuide } from '@/lib/guides'
+import { prisma } from '@/lib/prisma'
 import { formatPrice, formatDate } from '@/lib/utils'
 import { Reveal, Eyebrow } from '@/components/ui'
 
@@ -9,34 +11,25 @@ export const metadata: Metadata = {
   title: 'My Guides',
 }
 
-// In production: fetch from DB via Prisma
 async function getPurchases(userId: string) {
-  // return await prisma.purchase.findMany({
-  //   where: { userId },
-  //   include: { guide: true },
-  //   orderBy: { createdAt: 'desc' },
-  // })
-
-  // Mock data for development
-  return [
-    {
-      id: 'p1',
-      guideId: '1',
-      amount: 10000,
-      currency: 'usd',
-      createdAt: new Date().toISOString(),
+  const purchases = await prisma.purchase.findMany({
+    where: { userId, status: 'completed' },
+    include: {
       guide: {
-        id: '1',
-        slug: 'seoul',
-        title: 'Seoul',
-        tagline: '서울',
-        subtitle: 'City Guide',
-        coverImage:
-          'https://images.unsplash.com/photo-1601850494422-3cf14624b0b3?w=800&q=80',
-        placeCount: 120,
+        include: { _count: { select: { places: true } } },
       },
     },
-  ]
+    orderBy: { createdAt: 'desc' },
+  })
+
+  return purchases.map((purchase) => ({
+    id: purchase.id,
+    guideId: purchase.guideId,
+    amount: purchase.amount,
+    currency: purchase.currency,
+    createdAt: purchase.createdAt.toISOString(),
+    guide: toGuide(purchase.guide),
+  }))
 }
 
 export default async function DashboardPage() {

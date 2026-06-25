@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,25 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export function formatPayPalCustomId(input: { userId: string; guideId: string }): string {
+  return `${input.userId}:${input.guideId}`
+}
+
+export function parsePayPalCustomId(customId: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  if (customId === undefined) return null
+
+  const parts = customId.split(':')
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (userId.length === 0 || guideId.length === 0) return null
+
+  return { userId, guideId }
 }
 
 function getPayPalBaseUrl(): string {
@@ -77,7 +97,7 @@ export async function createPayPalOrder(input: {
       intent: 'CAPTURE',
       purchase_units: [
         {
-          custom_id: `${input.userId}:${input.guideId}`,
+          custom_id: formatPayPalCustomId({ userId: input.userId, guideId: input.guideId }),
           description: `${input.title} City Guide`,
           amount: {
             currency_code: input.currency.toUpperCase(),

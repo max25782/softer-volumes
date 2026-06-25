@@ -28,6 +28,28 @@ export async function recordCompletedPurchase(input: {
   provider: PaymentProvider
   externalId: string
 }) {
+  const guide = await prisma.guide.findUnique({
+    where: { id: input.guideId },
+    select: {
+      id: true,
+      price: true,
+      currency: true,
+      isPublished: true,
+    },
+  })
+
+  if (!guide || !guide.isPublished) {
+    throw new Error('Cannot record purchase for unpublished or missing guide')
+  }
+
+  if (guide.price !== input.amount) {
+    throw new Error('Payment amount does not match guide price')
+  }
+
+  if (guide.currency.toLowerCase() !== input.currency.toLowerCase()) {
+    throw new Error('Payment currency does not match guide currency')
+  }
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {

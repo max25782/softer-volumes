@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { getPayPalAccessToken, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -13,9 +13,9 @@ interface PayPalWebhookBody {
   }
 }
 
-async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
+async function verifyWebhook(body: PayPalWebhookBody): Promise<boolean> {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID
-  if (!webhookId) return process.env.NODE_ENV !== 'production'
+  if (!webhookId) return false
 
   const headersList = await headers()
   const token = await getPayPalAccessToken()
@@ -34,7 +34,7 @@ async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<
         transmission_sig: headersList.get('paypal-transmission-sig'),
         transmission_time: headersList.get('paypal-transmission-time'),
         webhook_id: webhookId,
-        webhook_event: JSON.parse(rawBody) as PayPalWebhookBody,
+        webhook_event: body,
       }),
     },
   )
@@ -46,22 +46,29 @@ async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<
 
 export async function POST(req: Request) {
   const rawBody = await req.text()
-  const body = JSON.parse(rawBody) as PayPalWebhookBody
-  const verified = await verifyWebhook(body, rawBody)
+  let body: PayPalWebhookBody
+
+  try {
+    body = JSON.parse(rawBody) as PayPalWebhookBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid PayPal webhook payload' }, { status: 400 })
+  }
+
+  const verified = await verifyWebhook(body)
 
   if (!verified) {
     return NextResponse.json({ error: 'Invalid PayPal webhook signature' }, { status: 400 })
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const purchaseMetadata = parsePayPalCustomId(body.resource.custom_id)
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (purchaseMetadata !== null && body.resource.id && amount > 0) {
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: purchaseMetadata.userId,
+        guideId: purchaseMetadata.guideId,
         amount,
         currency,
         provider: 'paypal',
