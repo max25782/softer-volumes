@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import type { Guide, GuideCategory, GuideCity, Place } from '@/lib/types'
+import type { Guide, GuideCategory, Place } from '@/lib/types'
 
 interface DbGuide {
   id: string
@@ -46,10 +46,6 @@ interface DbPlace {
   }>
 }
 
-function isGuideCity(value: string): value is GuideCity {
-  return ['seoul', 'tokyo', 'bangkok', 'bali', 'singapore'].includes(value)
-}
-
 function isGuideCategory(value: string): value is GuideCategory {
   return ['cafe', 'restaurant', 'bar', 'hotel', 'shop', 'culture', 'wellness'].includes(value)
 }
@@ -61,7 +57,7 @@ function priceRange(value: number | null): 1 | 2 | 3 | 4 | undefined {
 export function toGuide(guide: DbGuide): Guide {
   return {
     id: guide.id,
-    slug: isGuideCity(guide.slug) ? guide.slug : 'seoul',
+    slug: guide.slug,
     title: guide.title,
     subtitle: guide.subtitle,
     description: guide.description,
@@ -129,6 +125,28 @@ export async function findGuideByIdOrSlug(input: {
     },
     include: { _count: { select: { places: true } } },
   })
+}
+
+export async function findPublishedGuideForCheckout(input: {
+  guideId?: string
+  guideSlug?: string
+}) {
+  if (input.guideId !== undefined) {
+    const guide = await findGuideByIdOrSlug({
+      guideId: input.guideId,
+      publishedOnly: true,
+    })
+    if (guide !== null) return guide
+  }
+
+  if (input.guideSlug !== undefined) {
+    return findGuideByIdOrSlug({
+      guideSlug: input.guideSlug,
+      publishedOnly: true,
+    })
+  }
+
+  return null
 }
 
 export async function getPublishedPlacesForGuide(guideId: string): Promise<Place[]> {
