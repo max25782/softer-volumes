@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPayPalAccessToken } from '@/lib/paypal'
+import { getPayPalAccessToken, parsePayPalAmount, parsePayPalCustomId } from '@/lib/paypal'
 import { recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
@@ -54,19 +54,21 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
-    const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
+    const metadata = parsePayPalCustomId(body.resource.custom_id)
+    const amount = parsePayPalAmount(body.resource.amount?.value)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (metadata && amount !== null && body.resource.id) {
       await recordCompletedPurchase({
-        userId,
-        guideId,
+        userId: metadata.userId,
+        guideId: metadata.guideId,
         amount,
         currency,
         provider: 'paypal',
         externalId: body.resource.id,
       })
+    } else {
+      console.error('PayPal webhook missing required purchase metadata', body.resource?.id)
     }
   }
 
