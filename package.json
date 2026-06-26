@@ -9,7 +9,7 @@
     "postinstall": "prisma generate",
     "lint": "eslint .",
     "test": "vitest run",
-    "type-check": "tsc --noEmit",
+    "type-check": "next typegen && tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "dotenv -e .env -- prisma migrate deploy",
     "db:migrate:diff": "dotenv -e .env -- sh -c 'prisma migrate diff --from-url \"$DIRECT_URL\" --to-schema-datamodel prisma/schema.prisma --script'",
