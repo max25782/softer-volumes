@@ -173,13 +173,13 @@ export default async function GuideLandingPage({ params }: Props) {
       {/* ── FEATURES ── */}
       <section className="section bg-paper">
         <Reveal className="text-center mb-16">
-          <Eyebrow>What's Inside</Eyebrow>
+          <Eyebrow>What&apos;s Inside</Eyebrow>
           <h2
             className="font-display font-light"
             style={{ fontSize: 'clamp(36px, 4vw, 56px)' }}
           >
             Everything you need.<br />
-            <em className="text-gold">Nothing you don't.</em>
+            <em className="text-gold">Nothing you don&apos;t.</em>
           </h2>
         </Reveal>
 
