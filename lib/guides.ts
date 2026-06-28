@@ -113,22 +113,24 @@ export async function findGuideByIdOrSlug(input: {
   guideSlug?: string
   publishedOnly?: boolean
 }) {
-  const where =
-    input.guideId !== undefined
-      ? { id: input.guideId }
-      : input.guideSlug !== undefined
-        ? { slug: input.guideSlug }
-        : undefined
+  const lookups = [
+    ...(input.guideId !== undefined ? [{ id: input.guideId }] : []),
+    ...(input.guideSlug !== undefined ? [{ slug: input.guideSlug }] : []),
+  ]
 
-  if (!where) return null
+  for (const lookup of lookups) {
+    const guide = await prisma.guide.findFirst({
+      where: {
+        ...lookup,
+        ...(input.publishedOnly === true ? { isPublished: true } : {}),
+      },
+      include: { _count: { select: { places: true } } },
+    })
 
-  return prisma.guide.findFirst({
-    where: {
-      ...where,
-      ...(input.publishedOnly === true ? { isPublished: true } : {}),
-    },
-    include: { _count: { select: { places: true } } },
-  })
+    if (guide !== null) return guide
+  }
+
+  return null
 }
 
 export async function getPublishedPlacesForGuide(guideId: string): Promise<Place[]> {

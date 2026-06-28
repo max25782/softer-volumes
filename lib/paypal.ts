@@ -8,6 +8,7 @@ interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -52,6 +53,16 @@ export async function getPayPalAccessToken(): Promise<string> {
   const json = (await response.json()) as { access_token?: string }
   if (!json.access_token) throw new Error('PayPal auth response missing access token')
   return json.access_token
+}
+
+export function parsePayPalCustomId(customId: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  const parts = (customId ?? '').split(':')
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null
+
+  return { userId: parts[0], guideId: parts[1] }
 }
 
 export async function createPayPalOrder(input: {
