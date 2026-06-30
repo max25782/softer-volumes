@@ -1,6 +1,6 @@
 'use client'
 
-import { cn, categoryConfig } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { GuideCategory, GuideFilters } from '@/lib/types'
 import { LayoutGrid, List } from 'lucide-react'
 
