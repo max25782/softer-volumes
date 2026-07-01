@@ -17,6 +17,7 @@ export type GuideCity =
   | 'bangkok'
   | 'bali'
   | 'singapore'
+  | (string & {})
 
 export interface Guide {
   id: string
