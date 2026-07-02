@@ -72,4 +72,4 @@ describe('recordCompletedPurchase', () => {
 
     expect(prismaMock.purchase.upsert).not.toHaveBeenCalled()
   })
-}
+})

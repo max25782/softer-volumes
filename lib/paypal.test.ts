@@ -56,4 +56,4 @@ describe('getCompletedPayPalCaptureDetails', () => {
 
     expect(getCompletedPayPalCaptureDetails(capture)).toBeNull()
   })
-}
+})
