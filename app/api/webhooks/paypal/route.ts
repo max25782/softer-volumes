@@ -15,7 +15,7 @@ interface PayPalWebhookBody {
 
 async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID
-  if (!webhookId) return process.env.NODE_ENV !== 'production'
+  if (!webhookId) return false
 
   const headersList = await headers()
   const token = await getPayPalAccessToken()
@@ -46,7 +46,14 @@ async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<
 
 export async function POST(req: Request) {
   const rawBody = await req.text()
-  const body = JSON.parse(rawBody) as PayPalWebhookBody
+  let body: PayPalWebhookBody
+
+  try {
+    body = JSON.parse(rawBody) as PayPalWebhookBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid PayPal webhook payload' }, { status: 400 })
+  }
+
   const verified = await verifyWebhook(body, rawBody)
 
   if (!verified) {
@@ -54,19 +61,24 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const [userId, guideId, extra] = (body.resource.custom_id ?? '').split(':')
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
-      await recordCompletedPurchase({
-        userId,
-        guideId,
-        amount,
-        currency,
-        provider: 'paypal',
-        externalId: body.resource.id,
-      })
+    if (userId && guideId && extra === undefined && body.resource.id && amount > 0) {
+      try {
+        await recordCompletedPurchase({
+          userId,
+          guideId,
+          amount,
+          currency,
+          provider: 'paypal',
+          externalId: body.resource.id,
+        })
+      } catch (error) {
+        console.error('PayPal webhook purchase validation failed:', error)
+        return NextResponse.json({ error: 'Purchase validation failed' }, { status: 400 })
+      }
     }
   }
 
