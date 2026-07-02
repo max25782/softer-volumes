@@ -4,18 +4,28 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
-interface PayPalCapture {
+export interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
         status: string
+        custom_id?: string
         amount?: { value?: string; currency_code?: string }
       }>
     }
   }>
+}
+
+export interface CompletedPayPalCaptureDetails {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  externalId: string
 }
 
 function getPayPalBaseUrl(): string {
@@ -88,7 +98,7 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
+        return_url: `${input.origin}/api/checkout/paypal/return?guideSlug=${input.guideSlug}`,
         cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
       },
     }),
@@ -117,4 +127,35 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalCapture
   }
 
   return (await response.json()) as PayPalCapture
+}
+
+export function getCompletedPayPalCaptureDetails(
+  capture: PayPalCapture,
+): CompletedPayPalCaptureDetails | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture = purchaseUnit?.payments?.captures?.find(
+    (item) => item.status === 'COMPLETED',
+  )
+
+  if (!paymentCapture?.id) return null
+
+  const customId = paymentCapture.custom_id ?? purchaseUnit?.custom_id
+  const [userId, guideId, extra] = (customId ?? '').split(':')
+  if (!userId || !guideId || extra !== undefined) return null
+
+  const amountValue = Number(paymentCapture.amount?.value)
+  if (!Number.isFinite(amountValue) || amountValue <= 0) return null
+
+  const currency = paymentCapture.amount?.currency_code
+  if (!currency) return null
+
+  return {
+    userId,
+    guideId,
+    amount: Math.round(amountValue * 100),
+    currency,
+    externalId: paymentCapture.id,
+  }
 }

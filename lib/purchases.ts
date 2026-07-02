@@ -2,6 +2,15 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+interface CompletedPurchaseInput {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  externalId: string
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
@@ -20,14 +29,21 @@ export async function assertPurchasedGuide(userId: string, guideId: string): Pro
   if (!hasPurchase) throw new Error('Purchase required')
 }
 
-export async function recordCompletedPurchase(input: {
-  userId: string
-  guideId: string
-  amount: number
-  currency: string
-  provider: PaymentProvider
-  externalId: string
-}) {
+export async function recordCompletedPurchase(input: CompletedPurchaseInput) {
+  const guide = await prisma.guide.findFirst({
+    where: { id: input.guideId, isPublished: true },
+    select: { price: true, currency: true },
+  })
+
+  if (!guide) throw new Error('Published guide not found for purchase')
+
+  const expectedCurrency = guide.currency.toLowerCase()
+  const paidCurrency = input.currency.toLowerCase()
+
+  if (input.amount !== guide.price || paidCurrency !== expectedCurrency) {
+    throw new Error('Purchase amount or currency does not match guide')
+  }
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
