@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { getAppUrlForPath } from '@/lib/app-url'
 import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { getStripe } from '@/lib/stripe'
-import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
   const session = await auth()
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -17,19 +17,14 @@ export async function POST(req: Request) {
   }
 
   const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
-  const guide =
-    dbGuide !== null
-      ? toGuide(dbGuide)
-      : MOCK_GUIDES.find((g) => g.id === guideId || g.slug === guideSlug)
-  if (!guide) {
+  if (dbGuide === null) {
     return NextResponse.json({ error: 'Guide not found' }, { status: 404 })
   }
 
-  const origin = req.headers.get('origin') ?? 'http://localhost:3000'
+  const guide = toGuide(dbGuide)
 
   const checkoutSession = await getStripe().checkout.sessions.create({
     mode: 'payment',
-    payment_method_types: ['card'],
     payment_method_options: {
       card: { request_three_d_secure: 'automatic' },
     },
@@ -63,8 +58,8 @@ export async function POST(req: Request) {
       guideSlug: guide.slug,
     },
 
-    success_url: `${origin}/guides/${guide.slug}?success=true`,
-    cancel_url:  `${origin}/guide/${guide.slug}?cancelled=true`,
+    success_url: getAppUrlForPath(`/guides/${guide.slug}?success=true`),
+    cancel_url:  getAppUrlForPath(`/guide/${guide.slug}?cancelled=true`),
   })
 
   return NextResponse.json({ url: checkoutSession.url })

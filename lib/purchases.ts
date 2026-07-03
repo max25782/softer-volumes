@@ -28,6 +28,22 @@ export async function recordCompletedPurchase(input: {
   provider: PaymentProvider
   externalId: string
 }) {
+  const guide = await prisma.guide.findFirst({
+    where: { id: input.guideId, isPublished: true },
+    select: { id: true, price: true, currency: true },
+  })
+
+  if (guide === null) {
+    throw new Error('Cannot record purchase for an unpublished or missing guide')
+  }
+
+  const paidCurrency = input.currency.toLowerCase()
+  const expectedCurrency = guide.currency.toLowerCase()
+
+  if (input.amount !== guide.price || paidCurrency !== expectedCurrency) {
+    throw new Error('Payment amount or currency does not match guide price')
+  }
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
@@ -37,8 +53,8 @@ export async function recordCompletedPurchase(input: {
     },
     update: {
       status: 'completed',
-      amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      amount: guide.price,
+      currency: expectedCurrency,
       paymentProvider: input.provider,
       refundedAt: null,
       ...(input.provider === 'stripe'
@@ -47,9 +63,9 @@ export async function recordCompletedPurchase(input: {
     },
     create: {
       userId: input.userId,
-      guideId: input.guideId,
-      amount: input.amount,
-      currency: input.currency.toLowerCase(),
+      guideId: guide.id,
+      amount: guide.price,
+      currency: expectedCurrency,
       paymentProvider: input.provider,
       ...(input.provider === 'stripe'
         ? { stripePaymentId: input.externalId }
