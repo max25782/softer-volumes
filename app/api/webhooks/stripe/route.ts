@@ -32,8 +32,9 @@ export async function POST(req: Request) {
         const guideId = session.metadata?.guideId
         const paymentId =
           typeof session.payment_intent === 'string' ? session.payment_intent : session.id
+        const guideAmount = session.amount_subtotal ?? session.amount_total
 
-        if (!userId || !guideId || session.amount_total === null || !session.currency) {
+        if (!userId || !guideId || guideAmount === null || !session.currency) {
           console.error('Stripe session missing required purchase metadata', session.id)
           break
         }
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
         await recordCompletedPurchase({
           userId,
           guideId,
-          amount: session.amount_total,
+          amount: guideAmount,
           currency: session.currency,
           provider: 'stripe',
           externalId: paymentId,

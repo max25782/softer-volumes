@@ -4,10 +4,11 @@ interface PayPalOrder {
   links?: Array<{ href: string; rel: string }>
 }
 
-interface PayPalCapture {
+export interface PayPalCapture {
   id: string
   status: string
   purchase_units?: Array<{
+    custom_id?: string
     payments?: {
       captures?: Array<{
         id: string
@@ -16,6 +17,53 @@ interface PayPalCapture {
       }>
     }
   }>
+}
+
+export interface CompletedPayPalCapture {
+  externalId: string
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+}
+
+export function parsePayPalCustomId(customId: string | undefined): {
+  userId: string
+  guideId: string
+} | null {
+  if (customId === undefined) return null
+
+  const parts = customId.split(':')
+  if (parts.length !== 2) return null
+
+  const [userId, guideId] = parts
+  if (userId === '' || guideId === '') return null
+
+  return { userId, guideId }
+}
+
+export function getCompletedPayPalCapture(capture: PayPalCapture): CompletedPayPalCapture | null {
+  if (capture.status !== 'COMPLETED') return null
+
+  const purchaseUnit = capture.purchase_units?.[0]
+  const paymentCapture =
+    purchaseUnit?.payments?.captures?.find((payment) => payment.status === 'COMPLETED') ??
+    purchaseUnit?.payments?.captures?.[0]
+  const metadata = parsePayPalCustomId(purchaseUnit?.custom_id)
+  const amount = Math.round(Number(paymentCapture?.amount?.value ?? 0) * 100)
+  const currency = paymentCapture?.amount?.currency_code
+
+  if (paymentCapture?.id === undefined || metadata === null || amount <= 0 || currency === undefined) {
+    return null
+  }
+
+  return {
+    externalId: paymentCapture.id,
+    userId: metadata.userId,
+    guideId: metadata.guideId,
+    amount,
+    currency,
+  }
 }
 
 function getPayPalBaseUrl(): string {
@@ -88,7 +136,7 @@ export async function createPayPalOrder(input: {
       application_context: {
         brand_name: 'Softer Volumes',
         user_action: 'PAY_NOW',
-        return_url: `${input.origin}/api/checkout/paypal/return?guideId=${input.guideId}&guideSlug=${input.guideSlug}`,
+        return_url: `${input.origin}/api/checkout/paypal/return`,
         cancel_url: `${input.origin}/guide/${input.guideSlug}?paypal=cancelled`,
       },
     }),
