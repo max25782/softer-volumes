@@ -28,6 +28,16 @@ export async function recordCompletedPurchase(input: {
   provider: PaymentProvider
   externalId: string
 }) {
+  const guide = await prisma.guide.findUnique({
+    where: { id: input.guideId },
+    select: { price: true, currency: true },
+  })
+
+  if (guide === null) throw new Error('Purchase guide not found')
+  if (input.amount !== guide.price || input.currency.toLowerCase() !== guide.currency.toLowerCase()) {
+    throw new Error('Purchase amount does not match guide price')
+  }
+
   return prisma.purchase.upsert({
     where: {
       userId_guideId: {
