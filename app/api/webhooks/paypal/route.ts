@@ -54,11 +54,11 @@ export async function POST(req: Request) {
   }
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
-    const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
+    const [userId, guideId, extra] = (body.resource.custom_id ?? '').split(':')
     const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
-    if (userId && guideId && body.resource.id && amount > 0) {
+    if (userId && guideId && extra === undefined && body.resource.id && amount > 0) {
       await recordCompletedPurchase({
         userId,
         guideId,
