@@ -1,6 +1,16 @@
 import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
+type RevokedPurchaseStatus = 'refunded' | 'disputed'
+
+interface MarkProviderPurchaseStatusInput {
+  provider: PaymentProvider
+  externalId: string
+  status: RevokedPurchaseStatus
+  amount?: number
+  currency?: string
+  refundedAt?: Date
+}
 
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
@@ -55,6 +65,29 @@ export async function recordCompletedPurchase(input: {
         ? { stripePaymentId: input.externalId }
         : { paypalOrderId: input.externalId }),
     },
+  })
+}
+
+export async function markProviderPurchaseStatus(input: MarkProviderPurchaseStatusInput) {
+  const statusData =
+    input.status === 'refunded'
+      ? { status: input.status, refundedAt: input.refundedAt ?? new Date() }
+      : { status: input.status }
+
+  return prisma.purchase.updateMany({
+    where:
+      input.provider === 'stripe'
+        ? {
+            stripePaymentId: input.externalId,
+            ...(input.amount !== undefined ? { amount: { lte: input.amount } } : {}),
+            ...(input.currency !== undefined ? { currency: input.currency.toLowerCase() } : {}),
+          }
+        : {
+            paypalOrderId: input.externalId,
+            ...(input.amount !== undefined ? { amount: { lte: input.amount } } : {}),
+            ...(input.currency !== undefined ? { currency: input.currency.toLowerCase() } : {}),
+          },
+    data: statusData,
   })
 }
 

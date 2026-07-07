@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { headers } from 'next/headers'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { markProviderPurchaseStatus, recordCompletedPurchase } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
+
+interface StripeObjectReference {
+  id?: string
+}
+
+interface StripePaymentIntentCarrier {
+  payment_intent?: string | StripeObjectReference | null
+}
+
+function getPaymentIntentId(object: StripePaymentIntentCarrier): string | null {
+  if (typeof object.payment_intent === 'string') return object.payment_intent
+  return object.payment_intent?.id ?? null
+}
 
 export async function POST(req: Request) {
   const stripe = getStripe()
@@ -53,6 +66,36 @@ export async function POST(req: Request) {
     case 'payment_intent.payment_failed': {
       const intent = event.data.object as Stripe.PaymentIntent
       console.error(`Payment failed: ${intent.id}`)
+      break
+    }
+
+    case 'charge.refunded': {
+      const charge = event.data.object as Stripe.Charge
+      const paymentIntentId = getPaymentIntentId(charge)
+
+      if (charge.refunded && paymentIntentId) {
+        await markProviderPurchaseStatus({
+          provider: 'stripe',
+          externalId: paymentIntentId,
+          status: 'refunded',
+          amount: charge.amount_refunded,
+          currency: charge.currency,
+        })
+      }
+      break
+    }
+
+    case 'charge.dispute.created': {
+      const dispute = event.data.object as Stripe.Dispute
+      const paymentIntentId = getPaymentIntentId(dispute as StripePaymentIntentCarrier)
+
+      if (paymentIntentId) {
+        await markProviderPurchaseStatus({
+          provider: 'stripe',
+          externalId: paymentIntentId,
+          status: 'disputed',
+        })
+      }
       break
     }
 
