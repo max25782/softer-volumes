@@ -1,7 +1,7 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { getPayPalAccessToken } from '@/lib/paypal'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { markProviderPurchaseStatus, recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
   event_type?: string
@@ -10,7 +10,36 @@ interface PayPalWebhookBody {
     status?: string
     custom_id?: string
     amount?: { value?: string; currency_code?: string }
+    supplementary_data?: {
+      related_ids?: {
+        capture_id?: string
+      }
+    }
+    links?: Array<{
+      href?: string
+      rel?: string
+    }>
   }
+}
+
+function parseAmount(value: string | undefined): number {
+  return Math.round(Number(value ?? 0) * 100)
+}
+
+function getCaptureIdFromPayPalHref(href: string | undefined): string | null {
+  const match = href?.match(/\/v2\/payments\/captures\/([^/?#]+)/)
+  return match?.[1] ?? null
+}
+
+function getRefundedCaptureId(resource: PayPalWebhookBody['resource']): string | null {
+  const relatedCaptureId = resource?.supplementary_data?.related_ids?.capture_id
+  if (relatedCaptureId) return relatedCaptureId
+
+  const captureLink = resource?.links?.find(
+    (link) => link.rel === 'up' && link.href?.includes('/v2/payments/captures/') === true,
+  )
+
+  return getCaptureIdFromPayPalHref(captureLink?.href)
 }
 
 async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
@@ -55,7 +84,7 @@ export async function POST(req: Request) {
 
   if (body.event_type === 'PAYMENT.CAPTURE.COMPLETED' && body.resource?.status === 'COMPLETED') {
     const [userId, guideId] = (body.resource.custom_id ?? '').split(':')
-    const amount = Math.round(Number(body.resource.amount?.value ?? 0) * 100)
+    const amount = parseAmount(body.resource.amount?.value)
     const currency = body.resource.amount?.currency_code ?? 'USD'
 
     if (userId && guideId && body.resource.id && amount > 0) {
@@ -67,6 +96,25 @@ export async function POST(req: Request) {
         provider: 'paypal',
         externalId: body.resource.id,
       })
+    }
+  } else if (
+    body.event_type === 'PAYMENT.CAPTURE.REFUNDED' &&
+    body.resource?.status === 'COMPLETED'
+  ) {
+    const captureId = getRefundedCaptureId(body.resource)
+    const amount = parseAmount(body.resource.amount?.value)
+    const currency = body.resource.amount?.currency_code
+
+    if (captureId && amount > 0 && currency) {
+      await markProviderPurchaseStatus({
+        provider: 'paypal',
+        externalId: captureId,
+        status: 'refunded',
+        amount,
+        currency,
+      })
+    } else {
+      console.error('PayPal refund webhook missing original capture details', body.resource?.id)
     }
   }
 
