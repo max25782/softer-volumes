@@ -1,6 +1,42 @@
+import { Prisma, type PaymentProvider, type PurchaseStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 
-type PaymentProvider = 'stripe' | 'paypal'
+const terminalPurchaseStatuses: PurchaseStatus[] = ['refunded', 'disputed']
+
+interface CompletedPurchaseInput {
+  userId: string
+  guideId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  externalId: string
+}
+
+function completedPurchaseData(input: CompletedPurchaseInput) {
+  return {
+    status: 'completed' as PurchaseStatus,
+    amount: input.amount,
+    currency: input.currency.toLowerCase(),
+    paymentProvider: input.provider,
+    refundedAt: null,
+    stripePaymentId: input.provider === 'stripe' ? input.externalId : null,
+    paypalOrderId: input.provider === 'paypal' ? input.externalId : null,
+  }
+}
+
+function sameTerminalProviderPaymentWhere(input: CompletedPurchaseInput) {
+  return {
+    status: { in: terminalPurchaseStatuses },
+    paymentProvider: input.provider,
+    ...(input.provider === 'stripe'
+      ? { stripePaymentId: input.externalId }
+      : { paypalOrderId: input.externalId }),
+  }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+}
 
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
@@ -20,41 +56,44 @@ export async function assertPurchasedGuide(userId: string, guideId: string): Pro
   if (!hasPurchase) throw new Error('Purchase required')
 }
 
-export async function recordCompletedPurchase(input: {
-  userId: string
-  guideId: string
-  amount: number
-  currency: string
-  provider: PaymentProvider
-  externalId: string
-}) {
-  return prisma.purchase.upsert({
-    where: {
-      userId_guideId: {
-        userId: input.userId,
-        guideId: input.guideId,
-      },
-    },
-    update: {
-      status: 'completed',
-      amount: input.amount,
-      currency: input.currency.toLowerCase(),
-      paymentProvider: input.provider,
-      refundedAt: null,
-      ...(input.provider === 'stripe'
-        ? { stripePaymentId: input.externalId }
-        : { paypalOrderId: input.externalId }),
-    },
-    create: {
+export async function recordCompletedPurchase(input: CompletedPurchaseInput) {
+  const where = {
+    userId_guideId: {
       userId: input.userId,
       guideId: input.guideId,
-      amount: input.amount,
-      currency: input.currency.toLowerCase(),
-      paymentProvider: input.provider,
-      ...(input.provider === 'stripe'
-        ? { stripePaymentId: input.externalId }
-        : { paypalOrderId: input.externalId }),
     },
+  }
+  const data = completedPurchaseData(input)
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.purchase.updateMany({
+      where: {
+        userId: input.userId,
+        guideId: input.guideId,
+        NOT: sameTerminalProviderPaymentWhere(input),
+      },
+      data,
+    })
+
+    if (updated.count > 0) {
+      return tx.purchase.findUniqueOrThrow({ where })
+    }
+
+    const existing = await tx.purchase.findUnique({ where })
+    if (existing) return existing
+
+    try {
+      return await tx.purchase.create({
+        data: {
+          userId: input.userId,
+          guideId: input.guideId,
+          ...data,
+        },
+      })
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error
+      return tx.purchase.findUniqueOrThrow({ where })
+    }
   })
 }
 
