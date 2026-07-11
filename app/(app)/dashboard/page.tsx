@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 import { formatPrice, formatDate } from '@/lib/utils'
 import { Reveal, Eyebrow } from '@/components/ui'
 
@@ -9,34 +10,56 @@ export const metadata: Metadata = {
   title: 'My Guides',
 }
 
-// In production: fetch from DB via Prisma
-async function getPurchases(userId: string) {
-  // return await prisma.purchase.findMany({
-  //   where: { userId },
-  //   include: { guide: true },
-  //   orderBy: { createdAt: 'desc' },
-  // })
+interface DashboardPurchase {
+  id: string
+  amount: number
+  currency: string
+  createdAt: Date
+  guide: {
+    slug: string
+    title: string
+    tagline: string
+    coverImage: string
+    placeCount: number
+  }
+}
 
-  // Mock data for development
-  return [
-    {
-      id: 'p1',
-      guideId: '1',
-      amount: 10000,
-      currency: 'usd',
-      createdAt: new Date().toISOString(),
+async function getPurchases(userId: string) {
+  const purchases = await prisma.purchase.findMany({
+    where: { userId, status: 'completed' },
+    select: {
+      id: true,
+      amount: true,
+      currency: true,
+      createdAt: true,
       guide: {
-        id: '1',
-        slug: 'seoul',
-        title: 'Seoul',
-        tagline: '서울',
-        subtitle: 'City Guide',
-        coverImage:
-          'https://images.unsplash.com/photo-1601850494422-3cf14624b0b3?w=800&q=80',
-        placeCount: 120,
+        select: {
+          slug: true,
+          title: true,
+          tagline: true,
+          coverImage: true,
+          _count: { select: { places: true } },
+        },
       },
     },
-  ]
+    orderBy: { createdAt: 'desc' },
+  })
+
+  return purchases.map(
+    (purchase): DashboardPurchase => ({
+      id: purchase.id,
+      amount: purchase.amount,
+      currency: purchase.currency,
+      createdAt: purchase.createdAt,
+      guide: {
+        slug: purchase.guide.slug,
+        title: purchase.guide.title,
+        tagline: purchase.guide.tagline,
+        coverImage: purchase.guide.coverImage,
+        placeCount: purchase.guide._count.places,
+      },
+    }),
+  )
 }
 
 export default async function DashboardPage() {

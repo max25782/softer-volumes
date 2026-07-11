@@ -131,6 +131,26 @@ export async function findGuideByIdOrSlug(input: {
   })
 }
 
+export async function findPublishedGuideForCheckout(input: {
+  guideId?: string
+  guideSlug?: string
+}) {
+  if (input.guideSlug !== undefined) {
+    const guide = await findGuideByIdOrSlug({
+      guideSlug: input.guideSlug,
+      publishedOnly: true,
+    })
+    if (guide !== null) return guide
+  }
+
+  if (input.guideId === undefined) return null
+
+  return findGuideByIdOrSlug({
+    guideId: input.guideId,
+    publishedOnly: true,
+  })
+}
+
 export async function getPublishedPlacesForGuide(guideId: string): Promise<Place[]> {
   const places = await prisma.place.findMany({
     where: { guideId, isPublished: true },
