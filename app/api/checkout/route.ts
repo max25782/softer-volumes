@@ -1,19 +1,34 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
+import { hasCompletedPurchaseForGuideReference } from '@/lib/purchases'
 import { getStripe } from '@/lib/stripe'
 import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
   const session = await auth()
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { guideId, guideSlug } = (await req.json()) as {
     guideId?: string
     guideSlug?: string
+  }
+
+  const hasPurchased = await hasCompletedPurchaseForGuideReference(session.user.id, {
+    guideId,
+    guideSlug,
+  })
+  if (hasPurchased) {
+    return NextResponse.json(
+      {
+        error: 'Guide already purchased',
+        guideUrl: guideSlug !== undefined ? `/guides/${guideSlug}` : '/dashboard',
+      },
+      { status: 409 },
+    )
   }
 
   const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })

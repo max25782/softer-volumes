@@ -11,6 +11,12 @@ interface CheckoutButtonProps {
   className?: string
 }
 
+interface CheckoutResponse {
+  url?: string
+  approvalUrl?: string
+  guideUrl?: string
+}
+
 export function CheckoutButton({
   guide,
   variant = 'outline',
@@ -34,7 +40,12 @@ export function CheckoutButton({
         return
       }
 
-      const data = (await res.json()) as { url?: string; approvalUrl?: string }
+      const data = (await res.json()) as CheckoutResponse
+      if (res.status === 409 && data.guideUrl !== undefined) {
+        router.push(data.guideUrl)
+        return
+      }
+
       const url = data.url ?? data.approvalUrl
       if (url) window.location.href = url
     } catch (err) {

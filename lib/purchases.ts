@@ -2,12 +2,42 @@ import { prisma } from '@/lib/prisma'
 
 type PaymentProvider = 'stripe' | 'paypal'
 
+interface GuideReference {
+  guideId?: string
+  guideSlug?: string
+}
+
 export async function hasCompletedPurchase(userId: string, guideId: string): Promise<boolean> {
   const purchase = await prisma.purchase.findFirst({
     where: {
       userId,
       guideId,
       status: 'completed',
+    },
+    select: { id: true },
+  })
+
+  return purchase !== null
+}
+
+export async function hasCompletedPurchaseForGuideReference(
+  userId: string,
+  input: GuideReference,
+): Promise<boolean> {
+  const guideReference =
+    input.guideSlug !== undefined
+      ? { guide: { slug: input.guideSlug, isPublished: true } }
+      : input.guideId !== undefined
+        ? { guideId: input.guideId, guide: { isPublished: true } }
+        : null
+
+  if (guideReference === null) return false
+
+  const purchase = await prisma.purchase.findFirst({
+    where: {
+      userId,
+      status: 'completed',
+      ...guideReference,
     },
     select: { id: true },
   })

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { findGuideByIdOrSlug, toGuide } from '@/lib/guides'
 import { createPayPalOrder } from '@/lib/paypal'
+import { hasCompletedPurchaseForGuideReference } from '@/lib/purchases'
 import { MOCK_GUIDES } from '@/lib/utils'
 
 export async function POST(req: Request) {
@@ -13,6 +14,20 @@ export async function POST(req: Request) {
   const { guideId, guideSlug } = (await req.json()) as {
     guideId?: string
     guideSlug?: string
+  }
+
+  const hasPurchased = await hasCompletedPurchaseForGuideReference(session.user.id, {
+    guideId,
+    guideSlug,
+  })
+  if (hasPurchased) {
+    return NextResponse.json(
+      {
+        error: 'Guide already purchased',
+        guideUrl: guideSlug !== undefined ? `/guides/${guideSlug}` : '/dashboard',
+      },
+      { status: 409 },
+    )
   }
 
   const dbGuide = await findGuideByIdOrSlug({ guideId, guideSlug, publishedOnly: true })
