@@ -58,6 +58,17 @@ export async function recordCompletedPurchase(input: {
   })
 }
 
+export async function markPayPalPurchasesDisputed(externalIds: string[]) {
+  return prisma.purchase.updateMany({
+    where: {
+      paypalOrderId: { in: externalIds },
+    },
+    data: {
+      status: 'disputed',
+    },
+  })
+}
+
 export async function recalculateGuideRating(guideId: string) {
   const aggregate = await prisma.guideRating.aggregate({
     where: { guideId },

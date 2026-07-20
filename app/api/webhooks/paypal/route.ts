@@ -1,7 +1,7 @@
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { getPayPalAccessToken } from '@/lib/paypal'
-import { recordCompletedPurchase } from '@/lib/purchases'
+import { markPayPalPurchasesDisputed, recordCompletedPurchase } from '@/lib/purchases'
 
 interface PayPalWebhookBody {
   event_type?: string
@@ -10,7 +10,18 @@ interface PayPalWebhookBody {
     status?: string
     custom_id?: string
     amount?: { value?: string; currency_code?: string }
+    disputed_transactions?: Array<{
+      seller_transaction_id?: string
+    }>
   }
+}
+
+function getDisputedTransactionIds(resource: PayPalWebhookBody['resource']): string[] {
+  const externalIds = (resource?.disputed_transactions ?? []).flatMap((transaction) =>
+    transaction.seller_transaction_id ? [transaction.seller_transaction_id] : [],
+  )
+
+  return [...new Set(externalIds)]
 }
 
 async function verifyWebhook(body: PayPalWebhookBody, rawBody: string): Promise<boolean> {
@@ -67,6 +78,17 @@ export async function POST(req: Request) {
         provider: 'paypal',
         externalId: body.resource.id,
       })
+    }
+  } else if (body.event_type === 'CUSTOMER.DISPUTE.CREATED') {
+    const externalIds = getDisputedTransactionIds(body.resource)
+
+    if (externalIds.length === 0) {
+      console.error('PayPal dispute webhook missing seller transaction IDs', body.resource?.id)
+    } else {
+      const result = await markPayPalPurchasesDisputed(externalIds)
+      if (result.count === 0) {
+        console.error('PayPal dispute webhook did not match a purchase', body.resource?.id)
+      }
     }
   }
 
