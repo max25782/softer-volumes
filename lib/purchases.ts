@@ -58,6 +58,17 @@ export async function recordCompletedPurchase(input: {
   })
 }
 
+/** Revoke access for a PayPal capture that was reversed (funds clawed back). */
+export async function markPayPalPurchaseRefunded(externalId: string) {
+  return prisma.purchase.updateMany({
+    where: { paypalOrderId: externalId },
+    data: {
+      status: 'refunded',
+      refundedAt: new Date(),
+    },
+  })
+}
+
 export async function recalculateGuideRating(guideId: string) {
   const aggregate = await prisma.guideRating.aggregate({
     where: { guideId },
