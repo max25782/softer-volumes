@@ -28,7 +28,7 @@ function getCaptureIdFromPayPalHref(href: string | undefined): string | null {
 }
 
 /** Resolve the original capture ID from a refund/reversal webhook resource. */
-export function getReversedCaptureId(resource: PayPalWebhookBody['resource']): string | null {
+function getReversedCaptureId(resource: PayPalWebhookBody['resource']): string | null {
   const relatedCaptureId = resource?.supplementary_data?.related_ids?.capture_id
   if (relatedCaptureId) return relatedCaptureId
 
